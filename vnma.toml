@@ -1,0 +1,15 @@
+[project]
+name = "vnma"
+version = "0.1.0"
+
+[dependencies]
+colorama = "==0.4.6"
+gram-framework = { path = "C:/Users/Kentucky/Desktop/Gram" }
+pygame-ce = "==2.5.8"
+requests = "==2.34.2"
+
+[dev-dependencies]
+
+[tool.vnma]
+vendor_dir = "vendor"
+ide_integration = ["vscode", "pycharm"]

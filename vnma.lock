@@ -1,0 +1,69 @@
+{
+  "lockfile_version": "1.0",
+  "python_version": "3.14.7",
+  "updated_at": "2026-10-14T18:25:39.490776+00:00",
+  "packages": {
+    "certifi": {
+      "version": "2026.7.22",
+      "source": "pypi",
+      "has_native_binaries": false,
+      "dll_directories": [],
+      "files_count": 12
+    },
+    "charset-normalizer": {
+      "version": "3.5.2",
+      "source": "pypi",
+      "has_native_binaries": true,
+      "dll_directories": [
+        "charset_normalizer"
+      ],
+      "files_count": 21
+    },
+    "colorama": {
+      "version": "0.4.6",
+      "source": "pypi",
+      "has_native_binaries": false,
+      "dll_directories": [],
+      "files_count": 17
+    },
+    "gram-framework": {
+      "version": "2.0.0b0",
+      "source": "local",
+      "path": "C:/Users/Kentucky/Desktop/Gram",
+      "has_native_binaries": false,
+      "dll_directories": [],
+      "files_count": 88
+    },
+    "idna": {
+      "version": "3.20",
+      "source": "pypi",
+      "has_native_binaries": false,
+      "dll_directories": [],
+      "files_count": 16
+    },
+    "pygame-ce": {
+      "version": "2.5.8",
+      "source": "pypi",
+      "has_native_binaries": true,
+      "dll_directories": [
+        "pygame",
+        "pygame/_sdl2"
+      ],
+      "files_count": 520
+    },
+    "requests": {
+      "version": "2.34.2",
+      "source": "pypi",
+      "has_native_binaries": false,
+      "dll_directories": [],
+      "files_count": 26
+    },
+    "urllib3": {
+      "version": "2.8.0",
+      "source": "pypi",
+      "has_native_binaries": false,
+      "dll_directories": [],
+      "files_count": 42
+    }
+  }
+}

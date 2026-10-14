@@ -1,0 +1,37 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# C extensions / shared libraries
+*.so
+*.dylib
+*.dll
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# VNMA vendor and cache artifacts
+vendor/
+vendor_vnma/
+.vnma_meta/
+vnma_cache/
+*.tmp
+
+# Environment and IDEs
+.env
+.vscode/
+.idea/
+
+# Development scratch files and research notes
+nota.txt
+plan.md
+res.txt
+gu_a_de_arquitectura_ptima_y_seguridad_para_vnma.md
+volcate_proyect.py
+vnma_project_dump.txt
+test.py
