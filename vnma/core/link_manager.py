@@ -83,7 +83,15 @@ class LinkManager:
                 declared_modules = exports_data.get("modules", [])
                 for mod in declared_modules:
                     cand = resolved / mod
-                    module_paths.append(cand.resolve().as_posix() if cand.is_dir() else resolved.as_posix())
+                    if cand.is_dir():
+                        if (cand / "__init__.py").is_file():
+                            module_paths.append(cand.parent.resolve().as_posix())
+                        else:
+                            module_paths.append(cand.resolve().as_posix())
+                    elif cand.is_file():
+                        module_paths.append(cand.parent.resolve().as_posix())
+                    else:
+                        module_paths.append(resolved.as_posix())
                 deps_data = data.get("dependencies", {})
                 for dep_name, dep_spec in deps_data.items():
                     raw = f"{dep_name}{dep_spec}" if isinstance(dep_spec, str) and dep_spec != "*" else str(dep_name)

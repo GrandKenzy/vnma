@@ -51,7 +51,7 @@ class TestLinkManager(unittest.TestCase):
             self.assertTrue(dep_entry.get("editable"))
 
             bootstrap_content = (context.vendor_path / "__bootstrap__.py").read_text(encoding="utf-8")
-            self.assertIn(pkg_code_dir.resolve().as_posix(), bootstrap_content)
+            self.assertIn(lib_dir.resolve().as_posix(), bootstrap_content)
 
     def test_zero_copy_live_reflection(self) -> None:
         """Verify modifying source code in linked directory is immediately observed without reinstalling."""

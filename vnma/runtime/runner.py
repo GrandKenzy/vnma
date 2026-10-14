@@ -74,7 +74,19 @@ class ScriptRunner:
         site_hook_dir = str(self._context.meta_path / "site")
         vendor_str = str(self._context.vendor_path)
 
-        injected = f"{site_hook_dir}{os.pathsep}{vendor_str}"
+        injected_parts = [site_hook_dir, vendor_str]
+        try:
+            from vnma.core.link_manager import LinkManager
+            for linked in LinkManager(self._context).get_linked_specs():
+                if linked.path and linked.path.is_dir():
+                    _, module_paths, _ = LinkManager.inspect_target(linked.path)
+                    for mp in module_paths:
+                        if mp not in injected_parts:
+                            injected_parts.append(mp)
+        except Exception:
+            pass
+
+        injected = os.pathsep.join(injected_parts)
         is_hermetic = env.get("VNMA_HERMETIC", "1") == "1"
 
         if is_hermetic:
