@@ -45,7 +45,7 @@ vnma install "C:/Users/Kentucky/Desktop/Gram"
 vnma install ./packages/my-internal-tool
 ```
 
-`vnma` builds the local source tree into an isolated wheel via PEP 517 before installation. If the local directory contains a `vnma_config.toml`, explicit declarations are honored.
+`vnma` builds the local source tree into an isolated wheel via PEP 517 before installation. If the local directory contains a `vnma_config.toml`, its explicit declarations are honored (see [Configuration Specifications](03-configuration-specs.md#2-package-level-configuration-vnma_configtoml)).
 
 In `vnma.toml`, this is recorded as:
 
@@ -64,7 +64,7 @@ To install directly from a remote Git repository:
 vnma install git+https://github.com/psf/requests.git@main
 ```
 
-`vnma` clones the repository into `~/.vnma/cache/git/`, builds a wheel archive in cache, and vendors it into `vendor/`.
+`vnma` clones the repository into `~/.vnma/cache/git/`, builds a wheel archive in cache, and vendors it into `vendor/`. If the repository contains a `vnma_config.toml`, its declared native DLL paths and CLI entry points are automatically loaded (see [Package-Level Configuration](03-configuration-specs.md#2-package-level-configuration-vnma_configtoml)).
 
 In `vnma.toml`, this is recorded as:
 
