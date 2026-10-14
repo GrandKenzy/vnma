@@ -11,7 +11,7 @@ import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from vnma.cli import cmd_install, cmd_prune, cmd_uninstall, cmd_update
+from vnma.cli import build_parser, cmd_install, cmd_prune, cmd_uninstall, cmd_update
 from vnma.core.context import ProjectContext
 from vnma.core.lockfile import LockfileHandler
 from vnma.core.models import InstalledFile, InstalledPackageRecord, VnmaManifest
@@ -374,7 +374,57 @@ class TestLockfileRestore(unittest.TestCase):
 
             self.assertEqual(content_first, content_second)
 
+    def test_cmd_run_without_target_runs_default_main(self) -> None:
+        """Verify cmd_run resolves and executes default main.py without arguments."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            vendor_dir = project_dir / "vendor"
+            meta_dir = vendor_dir / ".vnma_meta"
+            meta_dir.mkdir(parents=True, exist_ok=True)
+            (project_dir / "vnma.toml").write_text('[project]\nname="test"\n', encoding="utf-8")
+            output_file = project_dir / "output.txt"
+            main_script = project_dir / "main.py"
+            main_script.write_text(
+                f"from pathlib import Path\nPath({str(output_file)!r}).write_text('ran_ok', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+
+            context = ProjectContext(start_path=project_dir)
+            parser = build_parser()
+            args = parser.parse_args(["run"])
+            code = args.handler(args, context)
+
+            self.assertEqual(code, 0)
+            self.assertTrue(output_file.is_file())
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "ran_ok")
+
+    def test_cmd_run_with_directory_target(self) -> None:
+        """Verify cmd_run resolves main.py inside specified directory."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            vendor_dir = project_dir / "vendor"
+            meta_dir = vendor_dir / ".vnma_meta"
+            meta_dir.mkdir(parents=True, exist_ok=True)
+            (project_dir / "vnma.toml").write_text('[project]\nname="test"\n', encoding="utf-8")
+            src_dir = project_dir / "source"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            output_file = project_dir / "output_src.txt"
+            (src_dir / "main.py").write_text(
+                f"from pathlib import Path\nPath({str(output_file)!r}).write_text('ran_source_ok', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+
+            context = ProjectContext(start_path=project_dir)
+            parser = build_parser()
+            args = parser.parse_args(["run", "source"])
+            code = args.handler(args, context)
+
+            self.assertEqual(code, 0)
+            self.assertTrue(output_file.is_file())
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "ran_source_ok")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

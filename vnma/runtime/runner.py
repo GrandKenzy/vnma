@@ -11,6 +11,56 @@ from typing import Sequence
 from vnma.core.context import ProjectContext
 
 
+class EntryPointResolver:
+    """Resolves execution entrypoints from scripts, directories, or default conventions."""
+
+    def __init__(self, root: Path) -> None:
+        """Initialize resolver with base project path."""
+        self._root = root
+
+    def resolve(self, target: str | None = None) -> Path:
+        """Resolve python entrypoint script path from user argument or project defaults."""
+        if target:
+            target_path = Path(target)
+            if not target_path.is_absolute():
+                target_path = self._root / target_path
+
+            if target_path.is_file():
+                return target_path.resolve()
+
+            if target_path.is_dir():
+                candidates = [
+                    target_path / "main.py",
+                    target_path / "__main__.py",
+                    target_path / "app.py",
+                ]
+                for cand in candidates:
+                    if cand.is_file():
+                        return cand.resolve()
+                raise FileNotFoundError(
+                    f"No entry point found in directory '{target}' "
+                    f"(searched for main.py, __main__.py, app.py)."
+                )
+
+            raise FileNotFoundError(f"Script or directory '{target}' not found.")
+
+        default_candidates = [
+            self._root / "main.py",
+            self._root / "src" / "main.py",
+            self._root / "source" / "main.py",
+            self._root / "app.py",
+        ]
+        for cand in default_candidates:
+            if cand.is_file():
+                return cand.resolve()
+
+        raise FileNotFoundError(
+            "No default entry point found in project "
+            "(searched for main.py, src/main.py, source/main.py, app.py). "
+            "Please specify a script: vnma run <script.py>"
+        )
+
+
 class ScriptRunner:
     """Executes Python scripts or binaries in the context of vendored dependencies."""
 

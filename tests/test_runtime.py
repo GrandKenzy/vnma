@@ -96,6 +96,81 @@ class TestScriptRunnerIsolation(unittest.TestCase):
                     os.environ.pop("VNMA_HERMETIC", None)
 
 
+class TestEntryPointResolver(unittest.TestCase):
+    """Test resolution of entrypoint scripts, directories, and defaults."""
+
+    def test_resolve_default_root_main(self) -> None:
+        """Verify default resolution finds main.py in project root."""
+        from vnma.runtime.runner import EntryPointResolver
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            main_file = root / "main.py"
+            main_file.write_text("print('hello')", encoding="utf-8")
+
+            resolver = EntryPointResolver(root)
+            resolved = resolver.resolve(None)
+            self.assertEqual(resolved, main_file.resolve())
+
+    def test_resolve_default_src_main(self) -> None:
+        """Verify default resolution finds src/main.py when root has no entry point."""
+        from vnma.runtime.runner import EntryPointResolver
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            src_dir = root / "src"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            main_file = src_dir / "main.py"
+            main_file.write_text("print('hello from src')", encoding="utf-8")
+
+            resolver = EntryPointResolver(root)
+            resolved = resolver.resolve(None)
+            self.assertEqual(resolved, main_file.resolve())
+
+    def test_resolve_directory_target(self) -> None:
+        """Verify passing a directory resolves main.py or __main__.py inside it."""
+        from vnma.runtime.runner import EntryPointResolver
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source_dir = root / "source"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            main_file = source_dir / "main.py"
+            main_file.write_text("print('hello from source')", encoding="utf-8")
+
+            resolver = EntryPointResolver(root)
+            resolved = resolver.resolve("source")
+            self.assertEqual(resolved, main_file.resolve())
+
+    def test_resolve_explicit_file(self) -> None:
+        """Verify passing an explicit script file resolves directly."""
+        from vnma.runtime.runner import EntryPointResolver
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            custom_script = root / "test_custom.py"
+            custom_script.write_text("print('custom')", encoding="utf-8")
+
+            resolver = EntryPointResolver(root)
+            resolved = resolver.resolve("test_custom.py")
+            self.assertEqual(resolved, custom_script.resolve())
+
+    def test_resolve_not_found_raises_filenotfounderror(self) -> None:
+        """Verify resolving non-existent target or missing defaults raises FileNotFoundError."""
+        from vnma.runtime.runner import EntryPointResolver
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            resolver = EntryPointResolver(root)
+
+            with self.assertRaises(FileNotFoundError):
+                resolver.resolve(None)
+
+            with self.assertRaises(FileNotFoundError):
+                resolver.resolve("non_existent_dir")
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

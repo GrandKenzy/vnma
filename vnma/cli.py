@@ -17,7 +17,7 @@ from vnma.pypi.git import GitCloner
 from vnma.pypi.local_index import LocalWheelIndex
 from vnma.pypi.resolver import DependencyConflictError, WheelResolver
 from vnma.runtime.bootstrap import BootstrapGenerator
-from vnma.runtime.runner import ScriptRunner
+from vnma.runtime.runner import EntryPointResolver, ScriptRunner
 from vnma.visitors.git_visitors import GitignoreVisitor
 from vnma.visitors.ide_visitors import PyCharmConfigVisitor, VSCodeConfigVisitor
 from vnma.wheel.builder import SourceBuilder
@@ -571,14 +571,22 @@ def cmd_sync_ide(args: argparse.Namespace, context: ProjectContext) -> int:
 
 
 def cmd_run(args: argparse.Namespace, context: ProjectContext) -> int:
-    """Execute a Python script with the vendor directory configured."""
-    script_path = Path(args.script)
-    if not script_path.exists():
-        print(f"[vnma] Error: Script '{args.script}' not found.")
+    """Execute a Python script or entrypoint with the vendor directory configured."""
+    target = args.target
+    extra_args = list(args.args)
+    if target and target.startswith("-"):
+        extra_args.insert(0, target)
+        target = None
+
+    resolver = EntryPointResolver(context.project_root)
+    try:
+        script_path = resolver.resolve(target)
+    except FileNotFoundError as err:
+        print(f"[vnma] Error: {err}")
         return 1
 
     runner = ScriptRunner(context)
-    return runner.run_script(script_path, args.args)
+    return runner.run_script(script_path, extra_args)
 
 
 def cmd_exec(args: argparse.Namespace, context: ProjectContext) -> int:
@@ -721,7 +729,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync_parser.set_defaults(handler=cmd_sync_ide)
 
     run_parser = subparsers.add_parser("run", help="Run a Python script with vendor environment active")
-    run_parser.add_argument("script", help="Path to Python script to execute")
+    run_parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Path to script or directory (defaults to main.py)",
+    )
     run_parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to the script")
     run_parser.set_defaults(handler=cmd_run)
 
@@ -738,8 +751,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI application entrypoint."""
+    args_list = sys.argv[1:] if argv is None else list(argv)
+    if len(args_list) > 1 and args_list[0] == "run":
+        if args_list[1].startswith("-") and args_list[1] not in ("-h", "--help"):
+            args_list.insert(1, "--")
+
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(args_list)
     context = ProjectContext()
     return args.handler(args, context)
 
