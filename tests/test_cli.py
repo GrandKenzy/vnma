@@ -11,7 +11,7 @@ import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from vnma.cli import cmd_install, cmd_prune
+from vnma.cli import cmd_install, cmd_prune, cmd_uninstall
 from vnma.core.context import ProjectContext
 from vnma.core.models import InstalledFile, InstalledPackageRecord, VnmaManifest
 
@@ -133,6 +133,90 @@ class TestCliOfflineInstall(unittest.TestCase):
             self.assertIn("Successfully installed local-tool==1.0.0", buf.getvalue())
             installed_init = project_dir / "vendor" / "local_tool" / "__init__.py"
             self.assertTrue(installed_init.is_file())
+
+
+class TestCliUninstall(unittest.TestCase):
+    """Test uninstall command with optional --del flag."""
+
+    def test_uninstall_retains_in_toml_by_default(self) -> None:
+        """Verify uninstall removes package from vendor but retains it in vnma.toml."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            vendor_dir = project_dir / "vendor"
+            meta_dir = vendor_dir / ".vnma_meta"
+            meta_dir.mkdir(parents=True, exist_ok=True)
+
+            (project_dir / "vnma.toml").write_text(
+                '[project]\nname="test"\n\n[dependencies]\nsample-pkg = "==1.0.0"\n',
+                encoding="utf-8",
+            )
+
+            mod_file = vendor_dir / "sample.py"
+            mod_file.write_text("SAMPLE = 1\n", encoding="utf-8")
+
+            manifest = VnmaManifest(
+                python_version="3.14",
+                packages={
+                    "sample-pkg": InstalledPackageRecord(
+                        name="sample-pkg",
+                        version="1.0.0",
+                        files=[InstalledFile("sample.py", "sha", 10)],
+                    )
+                },
+            )
+            (meta_dir / "manifest.json").write_text(json.dumps(manifest.to_dict()), encoding="utf-8")
+
+            context = ProjectContext(start_path=project_dir)
+            args = argparse.Namespace(package="sample-pkg", delete_from_toml=False)
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = cmd_uninstall(args, context)
+
+            self.assertEqual(code, 0)
+            self.assertFalse(mod_file.exists())
+            toml_content = (project_dir / "vnma.toml").read_text(encoding="utf-8")
+            self.assertIn("sample-pkg", toml_content)
+
+    def test_uninstall_with_del_removes_from_toml(self) -> None:
+        """Verify uninstall with --del removes package from vendor and vnma.toml."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            vendor_dir = project_dir / "vendor"
+            meta_dir = vendor_dir / ".vnma_meta"
+            meta_dir.mkdir(parents=True, exist_ok=True)
+
+            (project_dir / "vnma.toml").write_text(
+                '[project]\nname="test"\n\n[dependencies]\nsample-pkg = "==1.0.0"\n',
+                encoding="utf-8",
+            )
+
+            mod_file = vendor_dir / "sample.py"
+            mod_file.write_text("SAMPLE = 1\n", encoding="utf-8")
+
+            manifest = VnmaManifest(
+                python_version="3.14",
+                packages={
+                    "sample-pkg": InstalledPackageRecord(
+                        name="sample-pkg",
+                        version="1.0.0",
+                        files=[InstalledFile("sample.py", "sha", 10)],
+                    )
+                },
+            )
+            (meta_dir / "manifest.json").write_text(json.dumps(manifest.to_dict()), encoding="utf-8")
+
+            context = ProjectContext(start_path=project_dir)
+            args = argparse.Namespace(package="sample-pkg", delete_from_toml=True)
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = cmd_uninstall(args, context)
+
+            self.assertEqual(code, 0)
+            self.assertFalse(mod_file.exists())
+            toml_content = (project_dir / "vnma.toml").read_text(encoding="utf-8")
+            self.assertNotIn("sample-pkg", toml_content)
 
 
 if __name__ == "__main__":

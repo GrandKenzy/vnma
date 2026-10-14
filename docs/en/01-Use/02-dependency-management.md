@@ -94,10 +94,16 @@ vnma install .
 To remove a package:
 
 ```bash
+# Remove package files from vendor/ (retains declaration in vnma.toml for future installs):
 vnma uninstall colorama
+
+# Completely remove package from vendor/ AND purge from vnma.toml:
+vnma uninstall colorama --del
+# or shorthand:
+vnma uninstall colorama -d
 ```
 
-`vnma` removes the files tracked in `manifest.json` for that package. Shared files claimed by other installed packages (e.g., in namespace packages) are preserved. Empty parent directories are pruned, and entries are removed from `vnma.toml` and `vnma.lock`.
+`vnma` removes the files tracked in `manifest.json` for that package. Shared files claimed by other installed packages (e.g., in namespace packages) are preserved, and empty parent directories are pruned. When `--del` (`-d`) is supplied, the dependency definition is also deleted from `vnma.toml`. In both cases, `vnma.lock` is synchronized.
 
 ---
 

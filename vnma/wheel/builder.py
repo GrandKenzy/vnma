@@ -33,7 +33,7 @@ class SourceBuilder:
                 f"Directory '{source_dir.name}' lacks pyproject.toml or setup.py build definitions."
             )
 
-        before_files = set(self._output_dir.glob("*.whl"))
+        before_mtimes = {f: f.stat().st_mtime for f in self._output_dir.glob("*.whl")}
 
         cmd = [
             sys.executable,
@@ -41,6 +41,7 @@ class SourceBuilder:
             "pip",
             "wheel",
             "--no-deps",
+            "--no-cache-dir",
             "-w",
             str(self._output_dir),
             str(resolved_src),
@@ -52,17 +53,21 @@ class SourceBuilder:
                 f"Failed to build wheel from '{source_dir.name}':\n{result.stderr or result.stdout}"
             )
 
-        after_files = set(self._output_dir.glob("*.whl"))
-        new_wheels = after_files - before_files
+        after_files = list(self._output_dir.glob("*.whl"))
+        modified_or_new = [
+            f for f in after_files
+            if f not in before_mtimes or f.stat().st_mtime > before_mtimes[f]
+        ]
 
-        if not new_wheels:
-            candidates = sorted(
-                self._output_dir.glob("*.whl"),
-                key=lambda f: f.stat().st_mtime,
-                reverse=True,
-            )
-            if candidates:
-                return candidates[0]
-            raise BuildError(f"Wheel build succeeded but no .whl found in {self._output_dir}")
+        if modified_or_new:
+            return sorted(modified_or_new, key=lambda f: f.stat().st_mtime, reverse=True)[0]
 
-        return sorted(new_wheels, key=lambda f: f.stat().st_mtime, reverse=True)[0]
+        candidates = sorted(
+            after_files,
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            return candidates[0]
+
+        raise BuildError(f"Wheel build succeeded but no .whl found in {self._output_dir}")

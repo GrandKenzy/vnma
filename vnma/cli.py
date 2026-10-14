@@ -254,9 +254,18 @@ def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
     uninstaller = WheelUninstaller(context)
 
     if uninstaller.uninstall(spec.name):
-        ConfigHandler.remove_dependency(context.config_path, spec.name)
+        if getattr(args, "delete_from_toml", False):
+            ConfigHandler.remove_dependency(context.config_path, spec.name)
+            print(
+                f"[vnma] Successfully uninstalled '{spec.name}', removed from "
+                f"{context.config_path.name} and synchronized {context.lock_path.name}"
+            )
+        else:
+            print(
+                f"[vnma] Successfully uninstalled '{spec.name}' from {context.vendor_name}/ "
+                f"(retained in {context.config_path.name}, use --del to remove)"
+            )
         LockfileHandler.update(context)
-        print(f"[vnma] Successfully uninstalled '{spec.name}' and synchronized {context.lock_path.name}")
         return 0
 
     print(f"[vnma] Package '{spec.name}' is not currently installed.")
@@ -405,6 +414,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a vendored package")
     uninstall_parser.add_argument("package", help="Package to remove (e.g. pygame-2.5.6)")
+    uninstall_parser.add_argument(
+        "-d",
+        "--del",
+        "--delete",
+        dest="delete_from_toml",
+        action="store_true",
+        help="Remove package specification from vnma.toml",
+    )
     uninstall_parser.set_defaults(handler=cmd_uninstall)
 
     prune_parser = subparsers.add_parser("prune", help="Remove orphaned packages not defined in vnma.toml")
