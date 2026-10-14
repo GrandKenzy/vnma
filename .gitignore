@@ -31,7 +31,13 @@ vnma_cache/
 nota.txt
 plan.md
 res.txt
+token.txt
+*token*
+analisis_conflictos.md
 gu_a_de_arquitectura_ptima_y_seguridad_para_vnma.md
 volcate_proyect.py
 vnma_project_dump.txt
 test.py
+*.log
+.pytest_cache/
+.coverage
