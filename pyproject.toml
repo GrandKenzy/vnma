@@ -26,6 +26,12 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/GrandKenzy/vnma"
+Documentation = "https://github.com/GrandKenzy/vnma/tree/main/docs"
+Repository = "https://github.com/GrandKenzy/vnma.git"
+"Bug Tracker" = "https://github.com/GrandKenzy/vnma/issues"
+
 [project.scripts]
 vnma = "vnma.cli:main"
 
