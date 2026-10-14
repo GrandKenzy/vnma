@@ -37,7 +37,13 @@ Users are encouraged to verify builds in testing environments before deploying t
 
 ### Installation
 
-Install `vnma` using `pip`:
+Install `vnma` directly from PyPI using `pip`:
+
+```bash
+pip install vnma
+```
+
+Or for development:
 
 ```bash
 pip install -e .
