@@ -120,3 +120,44 @@ gram-framework            2.0.0b0         No
 pygame-ce                 2.5.8           Yes       
 requests                  2.34.2          No        
 ```
+
+---
+
+## 5. Pruning Orphaned Packages (`vnma prune`)
+
+When removing or modifying dependencies directly in `vnma.toml`, transitive packages that are no longer required by any root dependency remain in `vendor/`.
+
+To inspect or remove orphaned packages:
+
+```bash
+# Preview orphaned packages without making modifications:
+vnma prune --dry-run
+
+# Interactively confirm pruning:
+vnma prune
+
+# Non-interactive confirmation (CI / automation):
+vnma prune --yes
+```
+
+`vnma prune`:
+1. Constructs the reachability closure from all packages declared in `vnma.toml`.
+2. Identifies packages present in `manifest.json` that are disconnected from the reachable graph.
+3. Deletes orphan files while preserving shared namespace files.
+4. Regenerates `__bootstrap__.py` and synchronizes `vnma.lock`.
+
+---
+
+## 6. Offline Mode & Local Repositories
+
+In air-gapped environments, secure CI pipelines, or when working without an internet connection, dependencies can be restored strictly from pre-downloaded wheels:
+
+```bash
+# Resolve and install strictly from user wheel cache (~/.vnma/cache/wheels/):
+vnma install --offline
+
+# Specify an additional local directory containing wheel archives:
+vnma install --offline --find-links ./wheelhouse
+```
+
+If a package cannot be satisfied by the available local wheels, `vnma` raises an error with the missing package and constraint without initiating network requests.

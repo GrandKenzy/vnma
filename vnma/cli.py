@@ -13,6 +13,7 @@ from vnma.core.models import PackageSpec, normalize_package_name
 from vnma.core.package_config import PackageConfig
 from vnma.pypi.cache import WheelCache
 from vnma.pypi.git import GitCloner
+from vnma.pypi.local_index import LocalWheelIndex
 from vnma.pypi.resolver import DependencyConflictError, WheelResolver
 from vnma.runtime.bootstrap import BootstrapGenerator
 from vnma.runtime.runner import ScriptRunner
@@ -20,6 +21,7 @@ from vnma.visitors.git_visitors import GitignoreVisitor
 from vnma.visitors.ide_visitors import PyCharmConfigVisitor, VSCodeConfigVisitor
 from vnma.wheel.builder import SourceBuilder
 from vnma.wheel.installer import WheelInstaller
+from vnma.wheel.pruner import OrphanPruner
 from vnma.wheel.uninstaller import WheelUninstaller
 
 
@@ -49,10 +51,22 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
     """Install a package or restore all dependencies resolving transitive DAG constraints."""
     context.ensure_directories()
     cache = WheelCache()
-    resolver = WheelResolver()
     installer = WheelInstaller(context)
     builder = SourceBuilder(cache.cache_dir)
     cloner = GitCloner()
+
+    offline = getattr(args, "offline", False)
+    find_links = getattr(args, "find_links", None)
+    search_dirs = [cache.cache_dir]
+    if find_links:
+        search_dirs.append(Path(find_links))
+
+    if offline:
+        local_index = LocalWheelIndex(search_directories=search_dirs)
+        resolver = WheelResolver(client=local_index)
+        print("[vnma] Offline mode enabled. Resolving strictly from local wheel caches.")
+    else:
+        resolver = WheelResolver()
 
     target_pkg = args.package
 
@@ -68,16 +82,21 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
             if spec.path:
                 _install_local_spec(spec, builder, installer)
             elif spec.git_url:
+                if offline:
+                    print(f"[vnma] WARNING: Git dependency '{spec.name}' may require network connectivity.")
                 _install_git_spec(spec, cloner, builder, installer)
             else:
                 pypi_specs.append(spec)
 
         if pypi_specs:
-            print(f"[vnma] Resolving {len(pypi_specs)} PyPI package(s) and transitive dependencies...")
+            origin = "local cache" if offline else "PyPI"
+            print(f"[vnma] Resolving {len(pypi_specs)} package(s) from {origin} and transitive dependencies...")
             try:
                 resolved_pairs = resolver.resolve_graph(pypi_specs)
-            except DependencyConflictError as err:
-                print(f"[vnma] Conflict error: {err}")
+            except (DependencyConflictError, ValueError) as err:
+                print(f"[vnma] Resolution error: {err}")
+                if offline:
+                    print("[vnma] Hint: Ensure required wheels exist in ~/.vnma/cache/wheels or pass --find-links <dir>")
                 return 1
 
             for spec, wheel_rel in resolved_pairs:
@@ -101,6 +120,8 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         return 0
 
     if root_spec.git_url:
+        if offline:
+            print(f"[vnma] WARNING: Git dependency '{root_spec.name}' may require network connectivity.")
         record = _install_git_spec(root_spec, cloner, builder, installer)
         ConfigHandler.add_dependency(
             context.config_path,
@@ -111,11 +132,14 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         print(f"[vnma] Synchronized {context.lock_path.name}")
         return 0
 
-    print(f"[vnma] Resolving '{root_spec.name}' and transitive dependencies...")
+    origin = "local cache" if offline else "PyPI"
+    print(f"[vnma] Resolving '{root_spec.name}' from {origin} and transitive dependencies...")
     try:
         resolved_pairs = resolver.resolve_graph([root_spec])
-    except DependencyConflictError as err:
-        print(f"[vnma] Conflict error: {err}")
+    except (DependencyConflictError, ValueError) as err:
+        print(f"[vnma] Resolution error: {err}")
+        if offline:
+            print("[vnma] Hint: Ensure required wheels exist in ~/.vnma/cache/wheels or pass --find-links <dir>")
         return 1
 
     primary_record = None
@@ -239,6 +263,37 @@ def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
     return 1
 
 
+def cmd_prune(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Identify and remove orphaned packages not reachable from project dependencies."""
+    pruner = OrphanPruner(context)
+    orphans = pruner.find_orphans()
+
+    if not orphans:
+        print("[vnma] No orphaned packages found. Vendor tree is clean.")
+        return 0
+
+    if getattr(args, "dry_run", False):
+        print(f"[vnma] Dry-run: The following {len(orphans)} orphaned package(s) would be removed:")
+        for pkg in orphans:
+            print(f"  - {pkg}")
+        return 0
+
+    if not getattr(args, "yes", False):
+        try:
+            confirm = input(f"[vnma] Prune {len(orphans)} orphaned package(s)? [y/N]: ").strip().lower()
+            if confirm not in ("y", "yes"):
+                print("[vnma] Pruning aborted.")
+                return 0
+        except (KeyboardInterrupt, EOFError):
+            print("\n[vnma] Pruning aborted.")
+            return 0
+
+    pruned = pruner.prune(dry_run=False)
+    print(f"[vnma] Successfully pruned {len(pruned)} orphaned package(s): {', '.join(pruned)}")
+    print(f"[vnma] Synchronized {context.lock_path.name}")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace, context: ProjectContext) -> int:
     """Display all packages and versions installed in the vendor directory."""
     installer = WheelInstaller(context)
@@ -335,11 +390,36 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Package name, version, local directory path, or git+ URL",
     )
+    install_parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Install strictly from local wheel cache without network calls",
+    )
+    install_parser.add_argument(
+        "--find-links",
+        type=str,
+        default=None,
+        help="Directory to search for local wheel archives",
+    )
     install_parser.set_defaults(handler=cmd_install)
 
     uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a vendored package")
     uninstall_parser.add_argument("package", help="Package to remove (e.g. pygame-2.5.6)")
     uninstall_parser.set_defaults(handler=cmd_uninstall)
+
+    prune_parser = subparsers.add_parser("prune", help="Remove orphaned packages not defined in vnma.toml")
+    prune_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview orphaned packages without removing them",
+    )
+    prune_parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Automatically confirm pruning of orphaned packages",
+    )
+    prune_parser.set_defaults(handler=cmd_prune)
 
     list_parser = subparsers.add_parser("list", help="List vendored packages")
     list_parser.set_defaults(handler=cmd_list)

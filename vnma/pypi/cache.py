@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -47,15 +48,28 @@ class WheelCache:
         temp_target = self._cache_dir / f"{filename}.part"
         hasher = hashlib.sha256()
 
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "vnma/0.1.0"},
-        )
-
-        with urllib.request.urlopen(req) as response, temp_target.open("wb") as out:
-            while chunk := response.read(65536):
-                hasher.update(chunk)
-                out.write(chunk)
+        if url.startswith("file://"):
+            parsed_url = urllib.parse.urlparse(url)
+            src_path = Path(urllib.request.url2pathname(parsed_url.path))
+            with src_path.open("rb") as src, temp_target.open("wb") as out:
+                while chunk := src.read(65536):
+                    hasher.update(chunk)
+                    out.write(chunk)
+        elif Path(url).is_file():
+            src_path = Path(url)
+            with src_path.open("rb") as src, temp_target.open("wb") as out:
+                while chunk := src.read(65536):
+                    hasher.update(chunk)
+                    out.write(chunk)
+        else:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "vnma/0.1.0"},
+            )
+            with urllib.request.urlopen(req) as response, temp_target.open("wb") as out:
+                while chunk := response.read(65536):
+                    hasher.update(chunk)
+                    out.write(chunk)
 
         digest = hasher.hexdigest()
         if expected_sha256 and digest.lower() != expected_sha256.lower():

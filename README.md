@@ -70,6 +70,17 @@ List installed packages:
 vnma list
 ```
 
+Prune orphaned packages not declared in `vnma.toml`:
+```bash
+vnma prune --dry-run
+vnma prune --yes
+```
+
+Restore dependencies in offline mode:
+```bash
+vnma install --offline
+```
+
 ---
 
 ## Documentation
