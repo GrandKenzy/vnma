@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from vnma.core.path_resolver import PortablePathResolver
+
 _NORM_REGEX = re.compile(r"[-_.]+")
 _DASH_VER_REGEX = re.compile(
     r"^(?P<name>[a-zA-Z0-9][a-zA-Z0-9._\-]*?)-(?P<ver>\d+(?:\.[a-zA-Z0-9._]+)*)$"
@@ -48,8 +50,8 @@ class PackageSpec:
                 git_ref=git_ref or "main",
             )
 
-        candidate_path = Path(cleaned)
-        if candidate_path.is_dir() or cleaned.startswith(("./", "../", ".\\", "..\\")) or (len(cleaned) >= 3 and cleaned[1:3] == ":\\"):
+        candidate_path = PortablePathResolver.expand(cleaned)
+        if candidate_path.is_dir() or cleaned.startswith(("./", "../", ".\\", "..\\", "~", "%user%", "%USER%")) or (len(cleaned) >= 3 and cleaned[1:3] == ":\\"):
             res_path = candidate_path.resolve()
             pkg_name = normalize_package_name(res_path.name)
             vnma_cfg = res_path / "vnma_config.toml"

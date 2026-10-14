@@ -9,6 +9,7 @@ from typing import Sequence
 from vnma.core.config import ConfigHandler
 from vnma.core.context import ProjectContext
 from vnma.core.models import PackageSpec, normalize_package_name
+from vnma.core.path_resolver import PortablePathResolver
 from vnma.runtime.bootstrap import BootstrapGenerator
 from vnma.visitors.git_visitors import GitignoreVisitor
 from vnma.visitors.ide_visitors import PyCharmConfigVisitor, VSCodeConfigVisitor
@@ -85,13 +86,14 @@ class LinkManager:
                     cand = resolved / mod
                     if cand.is_dir():
                         if (cand / "__init__.py").is_file():
-                            module_paths.append(cand.parent.resolve().as_posix())
+                            target_cand = cand.parent.resolve()
                         else:
-                            module_paths.append(cand.resolve().as_posix())
+                            target_cand = cand.resolve()
                     elif cand.is_file():
-                        module_paths.append(cand.parent.resolve().as_posix())
+                        target_cand = cand.parent.resolve()
                     else:
-                        module_paths.append(resolved.as_posix())
+                        target_cand = resolved
+                    module_paths.append(PortablePathResolver.to_portable_string(target_cand))
                 deps_data = data.get("dependencies", {})
                 for dep_name, dep_spec in deps_data.items():
                     raw = f"{dep_name}{dep_spec}" if isinstance(dep_spec, str) and dep_spec != "*" else str(dep_name)
@@ -114,24 +116,25 @@ class LinkManager:
         if not module_paths:
             src_dir = resolved / "src"
             if src_dir.is_dir():
-                module_paths.append(src_dir.resolve().as_posix())
+                module_paths.append(PortablePathResolver.to_portable_string(src_dir.resolve()))
             else:
-                module_paths.append(resolved.as_posix())
+                module_paths.append(PortablePathResolver.to_portable_string(resolved))
 
         return pkg_name, module_paths, dependencies
 
     def link(self, raw_path: str) -> tuple[PackageSpec, list[PackageSpec]]:
         """Register a local source directory in live zero-copy editable mode."""
-        resolved_path = Path(raw_path).expanduser().resolve()
+        resolved_path = PortablePathResolver.expand(raw_path, base_dir=self._context.project_root)
         if not resolved_path.is_dir():
             raise FileNotFoundError(f"Target directory '{raw_path}' does not exist.")
 
         pkg_name, module_paths, deps = self.inspect_target(resolved_path)
 
+        portable_path = PortablePathResolver.to_portable_string(resolved_path, base_dir=self._context.project_root)
         ConfigHandler.add_dependency(
             self._context.config_path,
             pkg_name,
-            {"path": resolved_path.as_posix(), "editable": True},
+            {"path": portable_path, "editable": True},
             self._context.pyproject_path,
         )
 
@@ -144,7 +147,11 @@ class LinkManager:
     def unlink(self, identifier: str) -> PackageSpec | None:
         """Remove a linked dependency specification and clean up runtime path injection."""
         norm_id = normalize_package_name(identifier)
-        resolved_candidate = Path(identifier).expanduser().resolve() if "/" in identifier or "\\" in identifier else None
+        resolved_candidate = (
+            PortablePathResolver.expand(identifier, base_dir=self._context.project_root)
+            if ("/" in identifier or "\\" in identifier or identifier.startswith("~") or "%" in identifier)
+            else None
+        )
 
         target_spec: PackageSpec | None = None
         for spec in self.get_linked_specs():

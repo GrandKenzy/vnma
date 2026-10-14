@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from vnma.core.path_resolver import PortablePathResolver
+
 
 class BootstrapGenerator:
     """Creates and updates the vendor runtime __bootstrap__.py and sitecustomize.py loaders."""
@@ -24,7 +26,11 @@ class BootstrapGenerator:
         init_file = self._vendor_root / "__init__.py"
 
         subdirs = sorted(set(dll_subdirectories or []))
-        modules = sorted(set(extra_paths or []))
+        portable_modules = [
+            PortablePathResolver.to_portable_string(p, self._vendor_root.parent)
+            for p in (extra_paths or [])
+        ]
+        modules = sorted(set(portable_modules))
         expected_py = f"{sys.version_info.major}.{sys.version_info.minor}"
 
         content = (
@@ -56,10 +62,12 @@ class BootstrapGenerator:
             "def _apply_hermetic_projection() -> None:\n"
             "    extra_dirs = []\n"
             "    for rel in _EXTRA_MODULE_PATHS:\n"
-            "        if os.path.isabs(rel):\n"
-            "            cand = os.path.realpath(rel)\n"
+            '        normalized = rel.replace("%user%", "~").replace("%USER%", "~")\n'
+            "        expanded = os.path.expanduser(os.path.expandvars(normalized))\n"
+            "        if os.path.isabs(expanded):\n"
+            "            cand = os.path.realpath(expanded)\n"
             "        else:\n"
-            "            cand = os.path.realpath(os.path.join(_VENDOR_STR, rel)) if rel else _VENDOR_STR\n"
+            "            cand = os.path.realpath(os.path.join(_VENDOR_STR, expanded)) if expanded else _VENDOR_STR\n"
             "        if os.path.isdir(cand) and cand not in extra_dirs:\n"
             "            extra_dirs.append(cand)\n\n"
             '    if os.environ.get("VNMA_HERMETIC", "1" if _HERMETIC_DEFAULT else "0") != "1":\n'

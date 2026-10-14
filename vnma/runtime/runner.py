@@ -77,12 +77,14 @@ class ScriptRunner:
         injected_parts = [site_hook_dir, vendor_str]
         try:
             from vnma.core.link_manager import LinkManager
+            from vnma.core.path_resolver import PortablePathResolver
             for linked in LinkManager(self._context).get_linked_specs():
                 if linked.path and linked.path.is_dir():
                     _, module_paths, _ = LinkManager.inspect_target(linked.path)
                     for mp in module_paths:
-                        if mp not in injected_parts:
-                            injected_parts.append(mp)
+                        resolved_mp = str(PortablePathResolver.expand(mp, base_dir=self._context.project_root))
+                        if resolved_mp not in injected_parts:
+                            injected_parts.append(resolved_mp)
         except Exception:
             pass
 

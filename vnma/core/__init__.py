@@ -9,6 +9,7 @@ from vnma.core.models import (
     VnmaManifest,
     WheelRelease,
 )
+from vnma.core.path_resolver import PortablePathResolver
 from vnma.core.platform_tags import PlatformTagMatcher
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "InstalledPackageRecord",
     "PackageSpec",
     "PlatformTagMatcher",
+    "PortablePathResolver",
     "ProjectContext",
     "VnmaConfig",
     "VnmaManifest",

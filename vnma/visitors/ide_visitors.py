@@ -50,10 +50,16 @@ class VSCodeConfigVisitor(ProjectVisitor):
         linked_paths: list[str] = []
         try:
             from vnma.core.config import ConfigHandler
+            from vnma.core.path_resolver import PortablePathResolver
             config = ConfigHandler.load(context.config_path, context.pyproject_path)
             for spec in config.get_all_specs(include_dev=True):
                 if spec.editable and spec.path and spec.path.is_dir():
-                    linked_paths.append(str(spec.path))
+                    portable_str = PortablePathResolver.to_portable_string(spec.path, context.project_root)
+                    if portable_str.startswith("~/"):
+                        vscode_path = "${userHome}/" + portable_str[2:]
+                    else:
+                        vscode_path = portable_str
+                    linked_paths.append(vscode_path)
         except Exception:
             pass
 

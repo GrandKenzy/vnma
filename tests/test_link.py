@@ -11,6 +11,7 @@ from vnma.core.config import ConfigHandler
 from vnma.core.context import ProjectContext
 from vnma.core.link_manager import LinkManager
 from vnma.core.models import InstalledFile, InstalledPackageRecord, VnmaManifest
+from vnma.core.path_resolver import PortablePathResolver
 from vnma.runtime.runner import ScriptRunner
 
 
@@ -51,7 +52,8 @@ class TestLinkManager(unittest.TestCase):
             self.assertTrue(dep_entry.get("editable"))
 
             bootstrap_content = (context.vendor_path / "__bootstrap__.py").read_text(encoding="utf-8")
-            self.assertIn(lib_dir.resolve().as_posix(), bootstrap_content)
+            portable_expected = PortablePathResolver.to_portable_string(lib_dir)
+            self.assertIn(portable_expected, bootstrap_content)
 
     def test_zero_copy_live_reflection(self) -> None:
         """Verify modifying source code in linked directory is immediately observed without reinstalling."""

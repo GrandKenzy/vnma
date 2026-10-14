@@ -207,20 +207,22 @@ When developing a library (such as an internal SDK or framework like `Gram`) alo
 ### A. Linking a Local Source Tree (`vnma link`)
 
 ```bash
-vnma link "C:/Users/Kentucky/Desktop/Gram"
+vnma link "~/Desktop/Gram"
+# or session-relative token:
+vnma link "%user%/Desktop/Gram"
 # or relative path:
 vnma link ../Gram
 ```
 
-1. **Zero-Copy**: Does not copy files into `vendor/`.
+1. **Zero-Copy & Session Portable**: Does not copy files into `vendor/`. Automatically serializes paths using user-independent tokens (`~/...`), ensuring the configuration works across different developers and user sessions without hardcoded usernames.
 2. **Instant Reflection**: Source changes in the linked library take effect immediately on the next execution (`vnma run` or `import vendor`).
 3. **Dependency Resolution**: Inspects `vnma_config.toml` or `pyproject.toml` in the target directory and automatically resolves and installs any declared dependencies into `vendor/`.
-4. **IDE Autocompletion**: Injects the target directory into `.vscode/settings.json` (`python.analysis.extraPaths`) and `.env`.
+4. **IDE Autocompletion**: Injects the target directory into `.vscode/settings.json` (`${userHome}/...` in `python.analysis.extraPaths`) and `.env`.
 
-In `vnma.toml`, it is stored as:
+In `vnma.toml`, it is stored portably as:
 ```toml
 [dependencies]
-gram = { path = "C:/Users/Kentucky/Desktop/Gram", editable = true }
+gram = { path = "~/Desktop/Gram", editable = true }
 ```
 
 ---
@@ -233,8 +235,8 @@ To remove a linked package:
 # By package name:
 vnma unlink gram
 
-# Or by directory path:
-vnma unlink "C:/Users/Kentucky/Desktop/Gram"
+# Or by directory path or portable token:
+vnma unlink "~/Desktop/Gram"
 ```
 
 This removes the dependency from `vnma.toml`, clears its search path from `__bootstrap__.py`, and updates IDE configurations.

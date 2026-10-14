@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from vnma.core.models import PackageSpec, normalize_package_name
+from vnma.core.path_resolver import PortablePathResolver
 
 
 @dataclass(slots=True)
@@ -37,7 +38,7 @@ class VnmaConfig:
                     specs.append(
                         PackageSpec(
                             name=norm_name,
-                            path=Path(value["path"]).resolve(),
+                            path=PortablePathResolver.expand(value["path"]),
                             editable=bool(value.get("editable", False)),
                         )
                     )
