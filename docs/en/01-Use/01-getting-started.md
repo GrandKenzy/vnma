@@ -50,6 +50,22 @@ The `vnma init` command performs the following automated setup steps:
 6. **IDE Config:** Injects search paths into `.vscode/settings.json`, `.idea/*.iml`, and `.env`.
 7. **Lockfile:** Initializes `vnma.lock`.
 
+### 3.1 Generating a Clean Configuration (`vnma generate`)
+
+If you only want to generate an empty configuration file without running the full environment initialization:
+
+```bash
+# Generate empty vnma.toml for the current project (version 1.0.0):
+vnma generate
+
+# Or generate a package manifest (vnma_config.toml) for libraries/repositories:
+vnma generate --package
+```
+
+* Flags:
+  * `-f`, `--force`: Overwrite existing configuration if already present.
+  * `-p`, `--package`, `--lib`: Generate library manifest (`vnma_config.toml`) instead of project file (`vnma.toml`).
+
 ---
 
 ## 4. Managed Project Structure

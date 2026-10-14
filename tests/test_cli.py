@@ -424,7 +424,89 @@ class TestLockfileRestore(unittest.TestCase):
             self.assertEqual(output_file.read_text(encoding="utf-8"), "ran_source_ok")
 
 
+class TestCliGenerate(unittest.TestCase):
+    """Test vnma generate command behavior for project and package manifests."""
+
+    def test_generate_default_vnma_toml(self) -> None:
+        """Verify generate creates vnma.toml with folder name, v1.0.0, and expected headers."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir) / "sample_app"
+            project_dir.mkdir()
+
+            context = ProjectContext(start_path=project_dir)
+            parser = build_parser()
+            args = parser.parse_args(["generate"])
+            exit_code = args.handler(args, context)
+
+            self.assertEqual(exit_code, 0)
+            config_file = project_dir / "vnma.toml"
+            self.assertTrue(config_file.is_file())
+
+            content = config_file.read_text(encoding="utf-8")
+            self.assertIn('[project]', content)
+            self.assertIn('name = "sample_app"', content)
+            self.assertIn('version = "1.0.0"', content)
+            self.assertIn('[dependencies]', content)
+            self.assertIn('[dev-dependencies]', content)
+            self.assertIn('[tool.vnma]', content)
+
+    def test_generate_existing_file_without_force(self) -> None:
+        """Verify generate errors when target file exists and force is not provided."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir) / "app"
+            project_dir.mkdir()
+            (project_dir / "vnma.toml").write_text("existing", encoding="utf-8")
+
+            context = ProjectContext(start_path=project_dir)
+            parser = build_parser()
+            args = parser.parse_args(["generate"])
+            exit_code = args.handler(args, context)
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual((project_dir / "vnma.toml").read_text(encoding="utf-8"), "existing")
+
+    def test_generate_existing_file_with_force(self) -> None:
+        """Verify generate overwrites target file when force flag is set."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir) / "app"
+            project_dir.mkdir()
+            (project_dir / "vnma.toml").write_text("existing", encoding="utf-8")
+
+            context = ProjectContext(start_path=project_dir)
+            parser = build_parser()
+            args = parser.parse_args(["generate", "--force"])
+            exit_code = args.handler(args, context)
+
+            self.assertEqual(exit_code, 0)
+            content = (project_dir / "vnma.toml").read_text(encoding="utf-8")
+            self.assertIn('name = "app"', content)
+            self.assertIn('version = "1.0.0"', content)
+
+    def test_generate_package_manifest(self) -> None:
+        """Verify generate --package creates vnma_config.toml with expected headers."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir) / "sample_lib"
+            project_dir.mkdir()
+
+            context = ProjectContext(start_path=project_dir)
+            parser = build_parser()
+            args = parser.parse_args(["generate", "--package"])
+            exit_code = args.handler(args, context)
+
+            self.assertEqual(exit_code, 0)
+            manifest_file = project_dir / "vnma_config.toml"
+            self.assertTrue(manifest_file.is_file())
+
+            content = manifest_file.read_text(encoding="utf-8")
+            self.assertIn('[package]', content)
+            self.assertIn('name = "sample_lib"', content)
+            self.assertIn('version = "1.0.0"', content)
+            self.assertIn('[runtime]', content)
+            self.assertIn('[exports]', content)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 

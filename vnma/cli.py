@@ -48,6 +48,49 @@ def cmd_init(args: argparse.Namespace, context: ProjectContext) -> int:
     return 0
 
 
+def cmd_generate(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Generate an empty TOML configuration template with current directory context."""
+    force = getattr(args, "force", False)
+    is_package = getattr(args, "package", False)
+    folder_name = context.project_root.name
+
+    if is_package:
+        target_path = context.project_root / "vnma_config.toml"
+        if target_path.exists() and not force:
+            print(f"[vnma] Error: '{target_path.name}' already exists. Use --force to overwrite.")
+            return 1
+
+        content = (
+            "[package]\n"
+            f'name = "{folder_name}"\n'
+            'version = "1.0.0"\n'
+            'type = "pure-python"\n\n'
+            "[runtime]\n"
+            "dll_directories = []\n"
+            "hermetic = true\n\n"
+            "[exports]\n"
+            "modules = []\n"
+            "entry_points = {}\n"
+        )
+        target_path.write_text(content, encoding="utf-8")
+        print(f"[vnma] Generated package manifest '{target_path.name}' for '{folder_name}' (v1.0.0)")
+        return 0
+
+    target_path = context.config_path
+    if target_path.exists() and not force:
+        print(f"[vnma] Error: '{target_path.name}' already exists. Use --force to overwrite.")
+        return 1
+
+    config = VnmaConfig(
+        project_name=folder_name,
+        version="1.0.0",
+        vendor_dir=context.vendor_name,
+    )
+    ConfigHandler.save(target_path, config)
+    print(f"[vnma] Generated '{target_path.name}' for project '{folder_name}' (v1.0.0)")
+    return 0
+
+
 def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
     """Install a package or restore all dependencies resolving transitive DAG constraints."""
     context.ensure_directories()
@@ -634,6 +677,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser("init", help="Initialize project vendor configuration")
     init_parser.set_defaults(handler=cmd_init)
+
+    generate_parser = subparsers.add_parser(
+        "generate",
+        help="Generate an empty TOML configuration template with project headers",
+    )
+    generate_parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite existing configuration file if present",
+    )
+    generate_parser.add_argument(
+        "-p",
+        "--package",
+        "--lib",
+        action="store_true",
+        dest="package",
+        help="Generate package-level vnma_config.toml for libraries",
+    )
+    generate_parser.set_defaults(handler=cmd_generate)
 
     install_parser = subparsers.add_parser("install", help="Install a package or restore dependencies")
     install_parser.add_argument(
