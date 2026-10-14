@@ -70,10 +70,11 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         resolver = WheelResolver()
 
     target_pkg = args.package
+    is_dev = getattr(args, "dev", False)
 
     if not target_pkg or target_pkg == ".":
         config = ConfigHandler.load(context.config_path, context.pyproject_path)
-        specs = config.get_all_specs()
+        specs = config.get_all_specs(include_dev=is_dev)
         if not specs:
             print("[vnma] No dependencies found to install.")
             return 0
@@ -132,7 +133,8 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
 
     if root_spec.path:
         record = _install_local_spec(root_spec, builder, installer)
-        ConfigHandler.add_dependency(
+        add_fn = ConfigHandler.add_dev_dependency if is_dev else ConfigHandler.add_dependency
+        add_fn(
             context.config_path,
             record.name,
             {"path": str(root_spec.path.as_posix())},
@@ -146,7 +148,8 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         if offline:
             print(f"[vnma] WARNING: Git dependency '{root_spec.name}' may require network connectivity.")
         record = _install_git_spec(root_spec, cloner, builder, installer)
-        ConfigHandler.add_dependency(
+        add_fn = ConfigHandler.add_dev_dependency if is_dev else ConfigHandler.add_dependency
+        add_fn(
             context.config_path,
             record.name,
             {"git": root_spec.git_url, "branch": root_spec.git_ref or "main"},
@@ -173,12 +176,14 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
             primary_record = record
 
     if primary_record:
-        ConfigHandler.add_dependency(
+        add_fn = ConfigHandler.add_dev_dependency if is_dev else ConfigHandler.add_dependency
+        add_fn(
             context.config_path,
             primary_record.name,
             root_spec.specifier if root_spec.specifier else f"=={primary_record.version}",
             pyproject_path=context.pyproject_path,
         )
+
 
     LockfileHandler.update(context)
     print(f"[vnma] Synchronized {context.lock_path.name}")
@@ -205,7 +210,6 @@ def _install_local_spec(
 
     ver = pkg_cfg.version if pkg_cfg and pkg_cfg.version else "0.0.0"
     if ver == "0.0.0":
-        # Extract from wheel filename
         parts = wheel_path.stem.split("-")
         if len(parts) >= 2:
             ver = parts[1]
@@ -397,8 +401,9 @@ def cmd_update(args: argparse.Namespace, context: ProjectContext) -> int:
     else:
         resolver = WheelResolver()
 
+    is_dev = getattr(args, "dev", False)
     config = ConfigHandler.load(context.config_path, context.pyproject_path)
-    specs = config.get_all_specs()
+    specs = config.get_all_specs(include_dev=is_dev)
     if not specs:
         print("[vnma] No dependencies found to update.")
         return 0
@@ -418,7 +423,8 @@ def cmd_update(args: argparse.Namespace, context: ProjectContext) -> int:
     pypi_specs_to_resolve: list[PackageSpec] = []
 
     for spec in specs:
-        raw_val = config.dependencies.get(spec.name)
+        raw_val = config.dependencies.get(spec.name) or config.dev_dependencies.get(spec.name)
+
         if spec.git_url:
             if only_pip:
                 continue
@@ -639,6 +645,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory to search for local wheel archives",
     )
+    install_parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Install development dependencies or record package in dev-dependencies",
+    )
     install_parser.set_defaults(handler=cmd_install)
 
     update_parser = subparsers.add_parser("update", help="Update vendored dependencies to latest versions")
@@ -659,6 +670,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only update PyPI dependencies",
     )
     update_parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Include development dependencies when updating",
+    )
+    update_parser.add_argument(
         "--offline",
         action="store_true",
         help="Update strictly from local wheel cache without network calls",
@@ -670,6 +686,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory to search for local wheel archives",
     )
     update_parser.set_defaults(handler=cmd_update)
+
 
     uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a vendored package")
     uninstall_parser.add_argument("package", help="Package to remove (e.g. pygame-2.5.6)")

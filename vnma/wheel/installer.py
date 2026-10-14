@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from vnma.core.config import ConfigHandler
 from vnma.core.context import ProjectContext
 from vnma.core.models import InstalledPackageRecord, VnmaManifest, normalize_package_name
 from vnma.core.package_config import PackageConfig
@@ -87,6 +88,26 @@ class WheelInstaller:
         for warning in binary_visitor.collisions:
             print(f"[vnma] WARNING: {warning}")
 
+        if package_config is None:
+            config = ConfigHandler.load(self._context.config_path, self._context.pyproject_path)
+            override_data = config.package_overrides.get(norm_name)
+            if override_data:
+                package_config = PackageConfig.from_dict({
+                    "package": {
+                        "name": norm_name,
+                        "version": version,
+                        "type": override_data.get("package_type", "native" if "dll_directories" in override_data else "pure-python"),
+                    },
+                    "runtime": {
+                        "dll_directories": override_data.get("dll_directories", []),
+                        "hermetic": override_data.get("hermetic", True),
+                    },
+                    "exports": {
+                        "entry_points": override_data.get("entry_points", {}),
+                        "modules": override_data.get("modules", []),
+                    },
+                })
+
         dll_dirs = (
             package_config.dll_directories
             if package_config and package_config.dll_directories
@@ -115,12 +136,15 @@ class WheelInstaller:
             active_extras=list(active_extras),
             wheel_filename=wheel_path.name,
             wheel_sha256=wheel_sha,
+            hermetic=package_config.hermetic if package_config else True,
+            modules=package_config.modules if package_config else [],
         )
 
         self._update_manifest(package_record)
         self._record_python_version()
         self._sync_bootstrap()
         self._sync_environment()
+
 
         return package_record
 
@@ -165,14 +189,25 @@ class WheelInstaller:
         ver_file.write_text(ver_str, encoding="utf-8")
 
     def _sync_bootstrap(self) -> None:
-        """Regenerate __bootstrap__.py with all aggregated DLL search paths."""
+        """Regenerate __bootstrap__.py with all aggregated DLL search paths and extra module exports."""
         manifest = self._load_manifest()
         all_dll_dirs: set[str] = set()
+        all_modules: set[str] = set()
+        all_hermetic = True
+
         for pkg in manifest.packages.values():
             all_dll_dirs.update(pkg.dll_directories)
+            all_modules.update(pkg.modules)
+            if not pkg.hermetic:
+                all_hermetic = False
 
         generator = BootstrapGenerator(self._context.vendor_path)
-        generator.generate(sorted(all_dll_dirs))
+        generator.generate(
+            dll_subdirectories=sorted(all_dll_dirs),
+            hermetic=all_hermetic,
+            extra_paths=sorted(all_modules),
+        )
+
 
     def _sync_environment(self) -> None:
         """Run project visitors for Git and IDE configuration."""

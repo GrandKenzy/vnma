@@ -172,7 +172,65 @@ class TestConfigHandler(unittest.TestCase):
             self.assertEqual(ctx.vendor_name, "my_vendor_folder")
             self.assertEqual(ctx.vendor_path, project_dir / "my_vendor_folder")
 
+    def test_dev_dependencies_get_all_specs(self) -> None:
+        """Verify get_all_specs honors include_dev flag."""
+        cfg = VnmaConfig(
+            dependencies={"flask": ">=2.0"},
+            dev_dependencies={"pytest": ">=7.0", "ruff": "*"},
+        )
+        self.assertEqual(len(cfg.get_all_specs(include_dev=False)), 1)
+        self.assertEqual(len(cfg.get_all_specs(include_dev=True)), 3)
+
+    def test_add_dev_dependency(self) -> None:
+        """Verify add_dev_dependency updates dev-dependencies in vnma.toml."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cfg_file = Path(tmp_dir) / "vnma.toml"
+            ConfigHandler.save(cfg_file, VnmaConfig(project_name="dev-test"))
+            ConfigHandler.add_dev_dependency(cfg_file, "mypy", ">=1.0.0")
+
+            loaded = ConfigHandler.load(cfg_file)
+            self.assertIn("mypy", loaded.dev_dependencies)
+            self.assertEqual(loaded.dev_dependencies["mypy"], ">=1.0.0")
+
+    def test_package_overrides_applied_during_install(self) -> None:
+        """Verify WheelInstaller applies [package.<name>] overrides configured in vnma.toml."""
+        import zipfile
+        from vnma.core.context import ProjectContext
+        from vnma.wheel.installer import WheelInstaller
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            config_file = project_dir / "vnma.toml"
+            config_file.write_text(
+                '[project]\nname = "override-test"\n\n'
+                '[package.custom-tool]\n'
+                'dll_directories = ["custom_tool/bin"]\n'
+                'package_type = "native"\n'
+                'hermetic = false\n'
+                'modules = ["src"]\n',
+                encoding="utf-8",
+            )
+            wheelhouse = project_dir / "wheelhouse"
+            wheelhouse.mkdir()
+            wheel_file = wheelhouse / "custom_tool-1.0.0-py3-none-any.whl"
+            with zipfile.ZipFile(wheel_file, "w") as zf:
+                zf.writestr(
+                    "custom_tool-1.0.0.dist-info/METADATA",
+                    "Metadata-Version: 2.1\nName: custom-tool\nVersion: 1.0.0\n",
+                )
+                zf.writestr("custom_tool/__init__.py", "OK = 1\n")
+
+            context = ProjectContext(start_path=project_dir)
+            installer = WheelInstaller(context)
+            record = installer.install(wheel_file, "custom-tool", "1.0.0")
+
+            self.assertEqual(record.dll_directories, ["custom_tool/bin"])
+            self.assertTrue(record.has_native_binaries)
+            self.assertFalse(record.hermetic)
+            self.assertEqual(record.modules, ["src"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

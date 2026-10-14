@@ -146,6 +146,8 @@ class InstalledPackageRecord:
     active_extras: list[str] = field(default_factory=list)
     wheel_filename: str = ""
     wheel_sha256: str = ""
+    hermetic: bool = True
+    modules: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert record to dictionary for JSON persistence."""
@@ -172,6 +174,8 @@ class InstalledPackageRecord:
             active_extras=data.get("active_extras", []),
             wheel_filename=data.get("wheel_filename", ""),
             wheel_sha256=data.get("wheel_sha256", ""),
+            hermetic=data.get("hermetic", True),
+            modules=data.get("modules", []),
         )
 
 

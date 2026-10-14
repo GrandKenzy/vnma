@@ -17,12 +17,14 @@ class BootstrapGenerator:
         self,
         dll_subdirectories: list[str] | None = None,
         hermetic: bool = True,
+        extra_paths: list[str] | None = None,
     ) -> Path:
         """Write deterministic O(1) runtime bootstrap script."""
         bootstrap_file = self._vendor_root / "__bootstrap__.py"
         init_file = self._vendor_root / "__init__.py"
 
         subdirs = sorted(set(dll_subdirectories or []))
+        modules = sorted(set(extra_paths or []))
         expected_py = f"{sys.version_info.major}.{sys.version_info.minor}"
 
         content = (
@@ -38,6 +40,7 @@ class BootstrapGenerator:
             f"_EXPECTED_PY_MM = {expected_py!r}\n"
             f"_HERMETIC_DEFAULT = {hermetic!r}\n"
             f"_DLL_SUBDIRS = {subdirs!r}\n"
+            f"_EXTRA_MODULE_PATHS = {modules!r}\n"
             "_DLL_HANDLES = []\n"
             "_BOOTSTRAPPED = False\n\n"
             "def _check_abi_compatibility() -> None:\n"
@@ -51,7 +54,15 @@ class BootstrapGenerator:
             "            stacklevel=2,\n"
             "        )\n\n"
             "def _apply_hermetic_projection() -> None:\n"
+            "    extra_dirs = []\n"
+            "    for rel in _EXTRA_MODULE_PATHS:\n"
+            "        cand = os.path.realpath(os.path.join(_VENDOR_STR, rel)) if rel else _VENDOR_STR\n"
+            "        if os.path.isdir(cand) and cand not in extra_dirs:\n"
+            "            extra_dirs.append(cand)\n\n"
             '    if os.environ.get("VNMA_HERMETIC", "1" if _HERMETIC_DEFAULT else "0") != "1":\n'
+            "        for d in reversed(extra_dirs):\n"
+            "            if d not in sys.path:\n"
+            "                sys.path.insert(0, d)\n"
             "        if _VENDOR_STR not in sys.path:\n"
             "            sys.path.insert(0, _VENDOR_STR)\n"
             "        return\n\n"
@@ -65,7 +76,7 @@ class BootstrapGenerator:
             "        u = user_site_getter()\n"
             "        if isinstance(u, str):\n"
             "            forbidden.add(os.path.normcase(os.path.abspath(u)))\n\n"
-            "    clean_path = [_VENDOR_STR, str(_VENDOR_DIR.parent)]\n"
+            "    clean_path = [_VENDOR_STR, *extra_dirs, str(_VENDOR_DIR.parent)]\n"
             "    for entry in sys.path:\n"
             "        if not entry:\n"
             "            continue\n"

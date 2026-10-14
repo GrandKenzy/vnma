@@ -25,12 +25,18 @@ class ScriptRunner:
         vendor_str = str(self._context.vendor_path)
 
         injected = f"{site_hook_dir}{os.pathsep}{vendor_str}"
-        current_pythonpath = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = (
-            f"{injected}{os.pathsep}{current_pythonpath}"
-            if current_pythonpath
-            else injected
-        )
+        is_hermetic = env.get("VNMA_HERMETIC", "1") == "1"
+
+        if is_hermetic:
+            env["PYTHONPATH"] = injected
+        else:
+            current_pythonpath = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = (
+                f"{injected}{os.pathsep}{current_pythonpath}"
+                if current_pythonpath
+                else injected
+            )
+
 
         bin_str = str(self._context.bin_path)
         current_path = env.get("PATH", "")

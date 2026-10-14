@@ -24,10 +24,13 @@ class VnmaConfig:
     )
     package_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
-    def get_all_specs(self) -> list[PackageSpec]:
+    def get_all_specs(self, include_dev: bool = False) -> list[PackageSpec]:
         """Convert declared dependency definitions into PackageSpec instances."""
         specs: list[PackageSpec] = []
-        for name, value in self.dependencies.items():
+        target_dict = dict(self.dependencies)
+        if include_dev:
+            target_dict.update(self.dev_dependencies)
+        for name, value in target_dict.items():
             norm_name = normalize_package_name(name)
             if isinstance(value, dict):
                 if "path" in value:
@@ -143,14 +146,18 @@ class ConfigHandler:
         return f'{name} = "{value}"'
 
     @staticmethod
-    def _add_dependency_pyproject(pyproject_path: Path, name: str, value: Any) -> None:
-        """Add or update a dependency inside [tool.vnma.dependencies] in pyproject.toml."""
+    def _add_dependency_pyproject(
+        pyproject_path: Path,
+        name: str,
+        value: Any,
+        section_header: str = "[tool.vnma.dependencies]",
+    ) -> None:
+        """Add or update a dependency inside a specified section in pyproject.toml."""
         norm_name = normalize_package_name(name)
         entry_line = ConfigHandler._format_entry_line(norm_name, value)
         content = pyproject_path.read_text(encoding="utf-8")
         lines = content.splitlines()
 
-        section_header = "[tool.vnma.dependencies]"
         if section_header in content:
             new_lines: list[str] = []
             in_section = False
@@ -184,16 +191,17 @@ class ConfigHandler:
 
     @staticmethod
     def _remove_dependency_pyproject(pyproject_path: Path, name: str) -> None:
-        """Remove a dependency from [tool.vnma.dependencies] in pyproject.toml."""
+        """Remove a dependency from dependencies and dev-dependencies in pyproject.toml."""
         norm_name = normalize_package_name(name)
         content = pyproject_path.read_text(encoding="utf-8")
         lines = content.splitlines()
 
+        target_sections = {"[tool.vnma.dependencies]", "[tool.vnma.dev-dependencies]"}
         new_lines: list[str] = []
         in_section = False
         for line in lines:
             stripped = line.strip()
-            if stripped == "[tool.vnma.dependencies]":
+            if stripped in target_sections:
                 in_section = True
                 new_lines.append(line)
                 continue
@@ -217,13 +225,41 @@ class ConfigHandler:
     ) -> None:
         """Add or update a dependency entry inside vnma.toml or pyproject.toml."""
         if not config_path.exists() and pyproject_path and pyproject_path.exists():
-            ConfigHandler._add_dependency_pyproject(pyproject_path, name, value)
+            ConfigHandler._add_dependency_pyproject(
+                pyproject_path,
+                name,
+                value,
+                section_header="[tool.vnma.dependencies]",
+            )
             return
 
         config = ConfigHandler.load(config_path, pyproject_path)
         norm_name = normalize_package_name(name)
         config.dependencies[norm_name] = value
         ConfigHandler.save(config_path, config)
+
+    @staticmethod
+    def add_dev_dependency(
+        config_path: Path,
+        name: str,
+        value: Any = "*",
+        pyproject_path: Path | None = None,
+    ) -> None:
+        """Add or update a development dependency inside vnma.toml or pyproject.toml."""
+        if not config_path.exists() and pyproject_path and pyproject_path.exists():
+            ConfigHandler._add_dependency_pyproject(
+                pyproject_path,
+                name,
+                value,
+                section_header="[tool.vnma.dev-dependencies]",
+            )
+            return
+
+        config = ConfigHandler.load(config_path, pyproject_path)
+        norm_name = normalize_package_name(name)
+        config.dev_dependencies[norm_name] = value
+        ConfigHandler.save(config_path, config)
+
 
     @staticmethod
     def remove_dependency(
