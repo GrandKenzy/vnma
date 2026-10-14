@@ -89,8 +89,9 @@ vnma install .
 
 ---
 
-## 3. Uninstalling Packages
+## 3. Uninstalling Packages & Purging Workspace
 
+### Uninstalling an Individual Package
 To remove a package:
 
 ```bash
@@ -104,6 +105,29 @@ vnma uninstall colorama -d
 ```
 
 `vnma` removes the files tracked in `manifest.json` for that package. Shared files claimed by other installed packages (e.g., in namespace packages) are preserved, and empty parent directories are pruned. When `--del` (`-d`) is supplied, the dependency definition is also deleted from `vnma.toml`. In both cases, `vnma.lock` is synchronized.
+
+### Purging Entire VNMA Support from a Project
+When `vnma uninstall` is invoked without specifying a package, it completely purges all VNMA vendor directories and support files from the folder, leaving the directory completely clean as if VNMA had never been initialized:
+
+```bash
+# Interactively purge all VNMA support from the current directory:
+vnma uninstall
+
+# Non-interactive confirmation (CI / automation):
+vnma uninstall -y
+
+# Purge vendor directories and lockfiles but keep vnma.toml:
+vnma uninstall --keep-config -y
+```
+
+What `vnma uninstall` cleans:
+* Deletes `vendor/` (or `vendor_vnma/`) with all vendored packages and metadata.
+* Deletes `vnma.lock`.
+* Deletes `vnma.toml` (unless `--keep-config` is provided).
+* Cleans VNMA paths from `.vscode/settings.json` (removes `.vscode/` if empty).
+* Cleans VNMA `PYTHONPATH` from `.env` (removes `.env` if empty).
+* Cleans VNMA ignore blocks from `.gitignore` (removes `.gitignore` if empty).
+* Never uninstalls the global `vnma` CLI tool, and never touches user source files (e.g. `main.py`).
 
 ---
 

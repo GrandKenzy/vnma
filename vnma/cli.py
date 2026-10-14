@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from vnma.core.cleaner import WorkspaceCleaner
 from vnma.core.config import ConfigHandler, VnmaConfig
 from vnma.core.context import ProjectContext
 from vnma.core.link_manager import LinkManager
@@ -522,8 +523,34 @@ def cmd_update(args: argparse.Namespace, context: ProjectContext) -> int:
 
 
 def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
-    """Uninstall a package and clean its files and configuration entries."""
-    raw_target = args.package
+    """Uninstall a package or completely purge VNMA support from the project directory."""
+    raw_target = getattr(args, "package", None)
+    purge_all = getattr(args, "all", False)
+
+    if not raw_target or purge_all:
+        if not getattr(args, "yes", False) and sys.stdin.isatty():
+            try:
+                choice = input("[vnma] Remove all VNMA vendors and project support files? [y/N]: ").strip().lower()
+                if choice not in ("y", "yes"):
+                    print("[vnma] Uninstall cancelled by user.")
+                    return 0
+            except (KeyboardInterrupt, EOFError):
+                print("\n[vnma] Operation aborted.")
+                return 1
+
+        keep_config = getattr(args, "keep_config", False)
+        cleaner = WorkspaceCleaner(context)
+        actions = cleaner.purge(keep_config=keep_config)
+
+        if not actions:
+            print("[vnma] Workspace is already clean. No VNMA artifacts found.")
+            return 0
+
+        for act in actions:
+            print(f"[vnma] {act}")
+        print("[vnma] Project cleaned successfully.")
+        return 0
+
     spec = PackageSpec.parse(raw_target)
     uninstaller = WheelUninstaller(context)
 
@@ -859,8 +886,30 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.set_defaults(handler=cmd_update)
 
 
-    uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a vendored package")
-    uninstall_parser.add_argument("package", help="Package to remove (e.g. pygame-2.5.6)")
+    uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a vendored package or clean project support")
+    uninstall_parser.add_argument(
+        "package",
+        nargs="?",
+        default=None,
+        help="Package to remove (e.g. pygame-2.5.6). If omitted, completely removes VNMA support from this project.",
+    )
+    uninstall_parser.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        help="Purge all VNMA vendor directories, lockfiles, and workspace integrations",
+    )
+    uninstall_parser.add_argument(
+        "--keep-config",
+        action="store_true",
+        help="Preserve vnma.toml when performing a workspace purge",
+    )
+    uninstall_parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Bypass interactive confirmation prompt",
+    )
     uninstall_parser.add_argument(
         "-d",
         "--del",

@@ -9,6 +9,7 @@ from vnma.core.models import (
     VnmaManifest,
     WheelRelease,
 )
+from vnma.core.cleaner import WorkspaceCleaner
 from vnma.core.path_resolver import PortablePathResolver
 from vnma.core.platform_tags import PlatformTagMatcher
 
@@ -23,4 +24,5 @@ __all__ = [
     "VnmaConfig",
     "VnmaManifest",
     "WheelRelease",
+    "WorkspaceCleaner",
 ]
