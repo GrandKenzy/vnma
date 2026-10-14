@@ -12,6 +12,7 @@ from vnma.core.lockfile import LockfileHandler
 from vnma.core.models import PackageSpec, normalize_package_name
 from vnma.core.package_config import PackageConfig
 from vnma.pypi.cache import WheelCache
+from vnma.pypi.client import PyPIClient
 from vnma.pypi.git import GitCloner
 from vnma.pypi.local_index import LocalWheelIndex
 from vnma.pypi.resolver import DependencyConflictError, WheelResolver
@@ -77,6 +78,27 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
             print("[vnma] No dependencies found to install.")
             return 0
 
+        if LockfileHandler.is_synchronized(context, config):
+            lock_data = LockfileHandler.load(context.lock_path)
+            if lock_data and LockfileHandler.is_vendor_synchronized(context, lock_data):
+                print(f"[vnma] All locked dependencies already satisfied in {context.vendor_name}/.")
+                return 0
+            if lock_data:
+                print(f"[vnma] Restoring exact dependencies from {context.lock_path.name}...")
+                _restore_from_lock(
+                    context,
+                    lock_data,
+                    cache,
+                    installer,
+                    builder,
+                    cloner,
+                    offline=offline,
+                    find_links=find_links,
+                )
+                LockfileHandler.update(context)
+                print(f"[vnma] Restored environment matching {context.lock_path.name}")
+                return 0
+
         pypi_specs: list[PackageSpec] = []
         for spec in specs:
             if spec.path:
@@ -114,6 +136,7 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
             context.config_path,
             record.name,
             {"path": str(root_spec.path.as_posix())},
+            pyproject_path=context.pyproject_path,
         )
         LockfileHandler.update(context)
         print(f"[vnma] Synchronized {context.lock_path.name}")
@@ -127,6 +150,7 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
             context.config_path,
             record.name,
             {"git": root_spec.git_url, "branch": root_spec.git_ref or "main"},
+            pyproject_path=context.pyproject_path,
         )
         LockfileHandler.update(context)
         print(f"[vnma] Synchronized {context.lock_path.name}")
@@ -152,12 +176,14 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         ConfigHandler.add_dependency(
             context.config_path,
             primary_record.name,
-            f"=={primary_record.version}",
+            root_spec.specifier if root_spec.specifier else f"=={primary_record.version}",
+            pyproject_path=context.pyproject_path,
         )
 
     LockfileHandler.update(context)
     print(f"[vnma] Synchronized {context.lock_path.name}")
     return 0
+
 
 
 def _install_local_spec(
@@ -185,7 +211,13 @@ def _install_local_spec(
             ver = parts[1]
 
     print(f"[vnma] Installing built wheel {wheel_path.name} into vendor...")
-    record = installer.install(wheel_path, spec.name, ver, package_config=pkg_cfg)
+    record = installer.install(
+        wheel_path,
+        spec.name,
+        ver,
+        package_config=pkg_cfg,
+        active_extras=spec.extras,
+    )
     print(
         f"[vnma] Successfully installed {record.name}=={record.version} from {src_path} "
         f"({len(record.files)} files, native_binaries={record.has_native_binaries})"
@@ -217,7 +249,13 @@ def _install_git_spec(
             ver = parts[1]
 
     print(f"[vnma] Installing built wheel {wheel_path.name} into vendor...")
-    record = installer.install(wheel_path, spec.name, ver, package_config=pkg_cfg)
+    record = installer.install(
+        wheel_path,
+        spec.name,
+        ver,
+        package_config=pkg_cfg,
+        active_extras=spec.extras,
+    )
     print(
         f"[vnma] Successfully installed {record.name}=={record.version} from git "
         f"({len(record.files)} files, native_binaries={record.has_native_binaries})"
@@ -239,12 +277,198 @@ def _download_and_install(
         wheel_release.sha256,
     )
     print(f"[vnma] Installing {wheel_release.filename} into vendor...")
-    record = installer.install(wheel_path, spec.name, wheel_release.version)
+    record = installer.install(
+        wheel_path,
+        spec.name,
+        wheel_release.version,
+        active_extras=spec.extras,
+    )
     print(
         f"[vnma] Successfully installed {record.name}=={record.version} "
         f"({len(record.files)} files, native_binaries={record.has_native_binaries})"
     )
     return record
+
+
+def _restore_from_lock(
+    context: ProjectContext,
+    lock_data: dict[str, Any],
+    cache: WheelCache,
+    installer: WheelInstaller,
+    builder: SourceBuilder,
+    cloner: GitCloner,
+    offline: bool = False,
+    find_links: str | None = None,
+) -> None:
+    """Restore locked packages strictly using recorded hashes and wheel artifacts."""
+    packages = lock_data.get("packages", {})
+    manifest = installer._load_manifest()
+    pypi_client: PyPIClient | None = None
+
+    for pkg_name, info in sorted(packages.items()):
+        norm_name = normalize_package_name(pkg_name)
+        ver = info.get("version", "")
+        expected_sha = info.get("sha256", "")
+        wheel_name = info.get("wheel_filename", "")
+        extras = tuple(info.get("active_extras", []))
+
+        existing_record = manifest.packages.get(norm_name)
+        if existing_record and existing_record.version == ver:
+            if not expected_sha or existing_record.wheel_sha256 == expected_sha:
+                continue
+
+        source = info.get("source", "pypi")
+        if source == "local":
+            local_path = Path(info.get("path", ""))
+            spec = PackageSpec(name=norm_name, path=local_path, extras=extras)
+            _install_local_spec(spec, builder, installer)
+            continue
+
+        if source == "git":
+            spec = PackageSpec(
+                name=norm_name,
+                git_url=info.get("git_url", ""),
+                git_ref=info.get("git_ref", "main"),
+                extras=extras,
+            )
+            _install_git_spec(spec, cloner, builder, installer)
+            continue
+
+        wheel_file: Path | None = None
+        if wheel_name:
+            cached_candidate = cache.get_wheel_path(wheel_name)
+            if cached_candidate and (not expected_sha or WheelCache._verify_sha256(cached_candidate, expected_sha)):
+                wheel_file = cached_candidate
+            elif find_links:
+                candidate_path = Path(find_links) / wheel_name
+                if candidate_path.is_file() and (not expected_sha or WheelCache._verify_sha256(candidate_path, expected_sha)):
+                    wheel_file = candidate_path
+
+        if not wheel_file:
+            if offline:
+                raise FileNotFoundError(
+                    f"Locked wheel '{wheel_name}' for package '{norm_name}' not found in local cache."
+                )
+            if pypi_client is None:
+                pypi_client = PyPIClient()
+            releases = pypi_client.fetch_wheel_releases(norm_name, requested_version=ver)
+            matched_rel = None
+            if wheel_name:
+                for rel in releases:
+                    if rel.filename == wheel_name:
+                        matched_rel = rel
+                        break
+            if not matched_rel and releases:
+                matched_rel = releases[0]
+            if not matched_rel:
+                raise ValueError(
+                    f"No release distribution found on PyPI matching locked package '{norm_name}=={ver}'."
+                )
+            print(f"[vnma] Fetching {matched_rel.filename}...")
+            wheel_file = cache.download_wheel(
+                matched_rel.url,
+                matched_rel.filename,
+                expected_sha256=expected_sha or matched_rel.sha256,
+            )
+
+        print(f"[vnma] Restoring {wheel_file.name} into vendor...")
+        record = installer.install(wheel_file, norm_name, ver, active_extras=extras)
+        manifest.packages[norm_name] = record
+
+
+def cmd_update(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Update dependencies to latest compatible versions ignoring user-pinned packages."""
+    context.ensure_directories()
+    cache = WheelCache()
+    installer = WheelInstaller(context)
+    builder = SourceBuilder(cache.cache_dir)
+    cloner = GitCloner()
+
+    offline = getattr(args, "offline", False)
+    find_links = getattr(args, "find_links", None)
+    search_dirs = [cache.cache_dir]
+    if find_links:
+        search_dirs.append(Path(find_links))
+
+    if offline:
+        local_index = LocalWheelIndex(search_directories=search_dirs)
+        resolver = WheelResolver(client=local_index)
+        print("[vnma] Offline mode enabled. Resolving updates strictly from local wheel caches.")
+    else:
+        resolver = WheelResolver()
+
+    config = ConfigHandler.load(context.config_path, context.pyproject_path)
+    specs = config.get_all_specs()
+    if not specs:
+        print("[vnma] No dependencies found to update.")
+        return 0
+
+    target_pkg = getattr(args, "package", None)
+    if target_pkg:
+        norm_target = normalize_package_name(target_pkg)
+        specs = [s for s in specs if s.name == norm_target]
+        if not specs:
+            print(f"[vnma] Package '{target_pkg}' is not declared in project dependencies.")
+            return 1
+
+    only_git = getattr(args, "git", False)
+    only_pip = getattr(args, "pip", False)
+
+    updated_count = 0
+    pypi_specs_to_resolve: list[PackageSpec] = []
+
+    for spec in specs:
+        raw_val = config.dependencies.get(spec.name)
+        if spec.git_url:
+            if only_pip:
+                continue
+            is_pinned_git = False
+            if isinstance(raw_val, dict):
+                if "commit" in raw_val or "tag" in raw_val:
+                    is_pinned_git = True
+            if is_pinned_git:
+                continue
+            print(f"[vnma] Updating git dependency '{spec.name}' from {spec.git_url} (ref: {spec.git_ref})...")
+            _install_git_spec(spec, cloner, builder, installer)
+            updated_count += 1
+        elif spec.path:
+            if only_git or only_pip:
+                continue
+            print(f"[vnma] Rebuilding local dependency '{spec.name}' from {spec.path}...")
+            _install_local_spec(spec, builder, installer)
+            updated_count += 1
+        else:
+            if only_git:
+                continue
+            is_pinned_pypi = False
+            if isinstance(raw_val, str) and (raw_val.startswith("==") or raw_val.startswith("===")):
+                is_pinned_pypi = True
+            elif spec.specifier.startswith("==") or spec.specifier.startswith("==="):
+                is_pinned_pypi = True
+            if is_pinned_pypi:
+                continue
+            pypi_specs_to_resolve.append(spec)
+
+    if pypi_specs_to_resolve:
+        origin = "local cache" if offline else "PyPI"
+        print(f"[vnma] Resolving latest updates for {len(pypi_specs_to_resolve)} package(s) from {origin}...")
+        try:
+            resolved_pairs = resolver.resolve_graph(pypi_specs_to_resolve)
+        except (DependencyConflictError, ValueError) as err:
+            print(f"[vnma] Update resolution error: {err}")
+            return 1
+
+        for r_spec, wheel_rel in resolved_pairs:
+            _download_and_install(r_spec, wheel_rel, cache, installer)
+            updated_count += 1
+
+    if updated_count == 0:
+        print("[vnma] All declared dependencies are pinned or already up to date.")
+        return 0
+
+    LockfileHandler.update(context)
+    print(f"[vnma] Successfully updated {updated_count} package(s) and synchronized {context.lock_path.name}")
+    return 0
 
 
 def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
@@ -255,7 +479,11 @@ def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
 
     if uninstaller.uninstall(spec.name):
         if getattr(args, "delete_from_toml", False):
-            ConfigHandler.remove_dependency(context.config_path, spec.name)
+            ConfigHandler.remove_dependency(
+                context.config_path,
+                spec.name,
+                pyproject_path=context.pyproject_path,
+            )
             print(
                 f"[vnma] Successfully uninstalled '{spec.name}', removed from "
                 f"{context.config_path.name} and synchronized {context.lock_path.name}"
@@ -270,6 +498,7 @@ def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
 
     print(f"[vnma] Package '{spec.name}' is not currently installed.")
     return 1
+
 
 
 def cmd_prune(args: argparse.Namespace, context: ProjectContext) -> int:
@@ -411,6 +640,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory to search for local wheel archives",
     )
     install_parser.set_defaults(handler=cmd_install)
+
+    update_parser = subparsers.add_parser("update", help="Update vendored dependencies to latest versions")
+    update_parser.add_argument(
+        "package",
+        nargs="?",
+        default=None,
+        help="Optional package name to update individually",
+    )
+    update_parser.add_argument(
+        "--git",
+        action="store_true",
+        help="Only update git repository dependencies",
+    )
+    update_parser.add_argument(
+        "--pip",
+        action="store_true",
+        help="Only update PyPI dependencies",
+    )
+    update_parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Update strictly from local wheel cache without network calls",
+    )
+    update_parser.add_argument(
+        "--find-links",
+        type=str,
+        default=None,
+        help="Directory to search for local wheel archives",
+    )
+    update_parser.set_defaults(handler=cmd_update)
 
     uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall a vendored package")
     uninstall_parser.add_argument("package", help="Package to remove (e.g. pygame-2.5.6)")

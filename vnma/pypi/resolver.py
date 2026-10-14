@@ -69,9 +69,12 @@ class WheelResolver:
     def resolve_graph(
         self, root_specs: Sequence[PackageSpec]
     ) -> list[tuple[PackageSpec, WheelRelease]]:
-        """Resolve transitive dependency graph checking diamond constraints."""
+        """Resolve transitive dependency graph with cumulative constraints and retraction."""
         constraints_by_pkg: dict[str, list[tuple[str, str]]] = {}
+        extras_by_pkg: dict[str, set[str]] = {}
         resolved_wheels: dict[str, WheelRelease] = {}
+        direct_deps: dict[str, list[PackageSpec]] = {}
+
         queue: deque[tuple[PackageSpec, str]] = deque((s, "root") for s in root_specs)
 
         while queue:
@@ -79,13 +82,30 @@ class WheelResolver:
             pkg = normalize_package_name(current_spec.name)
 
             constraints_by_pkg.setdefault(pkg, []).append((requester, current_spec.specifier))
+            extras_by_pkg.setdefault(pkg, set()).update(current_spec.extras)
+
             combined_spec_str = ",".join(
                 s for _, s in constraints_by_pkg[pkg] if s and s != "*"
             )
 
-            if pkg in resolved_wheels:
-                if self._matches_specifier(resolved_wheels[pkg].version, combined_spec_str):
-                    continue
+            already_resolved = resolved_wheels.get(pkg)
+            if already_resolved and self._matches_specifier(already_resolved.version, combined_spec_str):
+                active_extras = tuple(sorted(extras_by_pkg[pkg]))
+                exact_data = self._client.fetch_package_data(pkg, already_resolved.version)
+                raw_reqs = exact_data.get("info", {}).get("requires_dist") or []
+                updated_children: list[PackageSpec] = []
+                for raw_req in raw_reqs:
+                    if not self._evaluate_marker(raw_req, active_extras):
+                        continue
+                    child_spec = PackageSpec.parse(raw_req)
+                    updated_children.append(child_spec)
+
+                new_specs = [c for c in updated_children if c not in direct_deps.get(pkg, [])]
+                if new_specs:
+                    direct_deps[pkg] = updated_children
+                    for child in new_specs:
+                        queue.append((child, f"{pkg}=={already_resolved.version}"))
+                continue
 
             merged_spec = PackageSpec(name=pkg, specifier=combined_spec_str)
             try:
@@ -98,20 +118,44 @@ class WheelResolver:
                     f"Diamond Dependency Conflict on '{pkg}': {req_summary}"
                 ) from err
 
+            resolved_wheels[pkg] = wheel
+            active_extras = tuple(sorted(extras_by_pkg[pkg]))
             exact_data = self._client.fetch_package_data(pkg, wheel.version)
             raw_reqs = exact_data.get("info", {}).get("requires_dist") or []
 
-            resolved_wheels[pkg] = wheel
+            children: list[PackageSpec] = []
             for raw_req in raw_reqs:
-                if not self._evaluate_marker(raw_req, current_spec.extras):
+                if not self._evaluate_marker(raw_req, active_extras):
                     continue
                 child_spec = PackageSpec.parse(raw_req)
-                queue.append((child_spec, f"{pkg}=={wheel.version}"))
+                children.append(child_spec)
 
-        return [
-            (PackageSpec(name=pkg, specifier=f"=={whl.version}"), whl)
-            for pkg, whl in resolved_wheels.items()
-        ]
+            direct_deps[pkg] = children
+            for child in children:
+                queue.append((child, f"{pkg}=={wheel.version}"))
+
+        reachable_pkgs: set[str] = set()
+        reach_queue: deque[str] = deque(normalize_package_name(s.name) for s in root_specs)
+        for s in root_specs:
+            reachable_pkgs.add(normalize_package_name(s.name))
+
+        while reach_queue:
+            curr = reach_queue.popleft()
+            for child in direct_deps.get(curr, []):
+                child_norm = normalize_package_name(child.name)
+                if child_norm in resolved_wheels and child_norm not in reachable_pkgs:
+                    reachable_pkgs.add(child_norm)
+                    reach_queue.append(child_norm)
+
+        final_pairs: list[tuple[PackageSpec, WheelRelease]] = []
+        for pkg, whl in resolved_wheels.items():
+            if pkg in reachable_pkgs:
+                pkg_extras = tuple(sorted(extras_by_pkg.get(pkg, set())))
+                final_pairs.append(
+                    (PackageSpec(name=pkg, specifier=f"=={whl.version}", extras=pkg_extras), whl)
+                )
+
+        return final_pairs
 
     @staticmethod
     def _evaluate_marker(raw_requirement: str, active_extras: tuple[str, ...]) -> bool:

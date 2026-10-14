@@ -167,3 +167,31 @@ vnma install --offline --find-links ./wheelhouse
 ```
 
 If a package cannot be satisfied by the available local wheels, `vnma` raises an error with the missing package and constraint without initiating network requests.
+
+---
+
+## 7. Updating Dependencies (`vnma update`)
+
+To upgrade dependencies to their latest compatible versions without modifying fixed user constraints:
+
+```bash
+# Update all dependencies (PyPI and Git):
+vnma update
+
+# Update only PyPI packages:
+vnma update --pip
+
+# Update only Git packages (fetches latest commits from remote repositories):
+vnma update --git
+
+# Update an individual package and its transitives:
+vnma update requests
+```
+
+### Pinned Package Protection
+Following standard lockfile semantics, `vnma update` respects explicit user pins:
+* **PyPI packages** pinned with `==` (e.g., `colorama = "==0.4.6"`) are preserved and skipped silently without errors.
+* **Git packages** locked to an immutable `commit` hash or `tag` are preserved and skipped silently without errors.
+* Packages with floating constraints (e.g., `*`, `>=2.0.0`, `~=1.5.0`) or floating Git branches (`main`) are upgraded to their latest release.
+
+Upgrades are performed transactionally: obsolete files from previous package versions are safely deleted from `vendor/` without touching shared namespace packages, and `vnma.lock` is updated deterministically.

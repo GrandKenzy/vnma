@@ -177,6 +177,53 @@ class TestTransitiveGraphResolution(unittest.TestCase):
 
         self.assertIn("Diamond Dependency Conflict", str(ctx.exception))
 
+    def test_version_retraction_prunes_discarded_transitives(self) -> None:
+        """Verify that when a version changes, transitives of the discarded version are pruned."""
+        whl_app = WheelRelease("app-1.0.0-py3-none-any.whl", "https://app", "1", "1.0.0", "py3", "none", "any")
+        whl_limiter = WheelRelease("limiter-1.0.0-py3-none-any.whl", "https://lim", "2", "1.0.0", "py3", "none", "any")
+        whl_worker_20 = WheelRelease("worker-2.0.0-py3-none-any.whl", "https://w2", "3", "2.0.0", "py3", "none", "any")
+        whl_worker_10 = WheelRelease("worker-1.0.0-py3-none-any.whl", "https://w1", "4", "1.0.0", "py3", "none", "any")
+        whl_helper_new = WheelRelease("helper_new-1.0.0-py3-none-any.whl", "https://hn", "5", "1.0.0", "py3", "none", "any")
+        whl_helper_old = WheelRelease("helper_old-1.0.0-py3-none-any.whl", "https://ho", "6", "1.0.0", "py3", "none", "any")
+
+        packages = {
+            "app": {
+                "releases": [whl_app],
+                "requires_dist": {"1.0.0": ["worker>=1.0.0"]},
+            },
+            "limiter": {
+                "releases": [whl_limiter],
+                "requires_dist": {"1.0.0": ["worker<2.0.0"]},
+            },
+            "worker": {
+                "releases": [whl_worker_20, whl_worker_10],
+                "requires_dist": {
+                    "2.0.0": ["helper-new==1.0.0"],
+                    "1.0.0": ["helper-old==1.0.0"],
+                },
+            },
+            "helper-new": {
+                "releases": [whl_helper_new],
+                "requires_dist": {"1.0.0": []},
+            },
+            "helper-old": {
+                "releases": [whl_helper_old],
+                "requires_dist": {"1.0.0": []},
+            },
+        }
+
+        client = MockPyPIClient(packages)
+        resolver = WheelResolver(client=client)
+        resolved = resolver.resolve_graph([PackageSpec.parse("app"), PackageSpec.parse("limiter")])
+        resolved_names = {spec.name for spec, _ in resolved}
+
+        self.assertIn("app", resolved_names)
+        self.assertIn("limiter", resolved_names)
+        self.assertIn("worker", resolved_names)
+        self.assertIn("helper-old", resolved_names)
+        self.assertNotIn("helper-new", resolved_names)
+
 
 if __name__ == "__main__":
     unittest.main()
+

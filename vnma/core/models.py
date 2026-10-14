@@ -51,7 +51,6 @@ class PackageSpec:
         if candidate_path.is_dir() or cleaned.startswith(("./", "../", ".\\", "..\\")) or (len(cleaned) >= 3 and cleaned[1:3] == ":\\"):
             res_path = candidate_path.resolve()
             pkg_name = normalize_package_name(res_path.name)
-            # Inspect pyproject or vnma_config if available
             vnma_cfg = res_path / "vnma_config.toml"
             if vnma_cfg.is_file():
                 try:
@@ -98,6 +97,18 @@ class PackageSpec:
 
         return cls(name=normalize_package_name(cleaned), specifier="", extras=extras)
 
+    def matches(self, version_str: str) -> bool:
+        """Check whether a candidate version string satisfies the package specifier."""
+        if not self.specifier or self.specifier == "*":
+            return True
+        try:
+            from packaging.specifiers import SpecifierSet
+            from packaging.version import Version
+            spec_set = SpecifierSet(self.specifier)
+            return Version(version_str) in spec_set
+        except Exception:
+            return True
+
 
 @dataclass(slots=True, frozen=True)
 class WheelRelease:
@@ -132,6 +143,9 @@ class InstalledPackageRecord:
     dll_directories: list[str] = field(default_factory=list)
     entry_points: dict[str, str] = field(default_factory=dict)
     has_native_binaries: bool = False
+    active_extras: list[str] = field(default_factory=list)
+    wheel_filename: str = ""
+    wheel_sha256: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert record to dictionary for JSON persistence."""
@@ -155,6 +169,9 @@ class InstalledPackageRecord:
             dll_directories=data.get("dll_directories", []),
             entry_points=data.get("entry_points", {}),
             has_native_binaries=data.get("has_native_binaries", False),
+            active_extras=data.get("active_extras", []),
+            wheel_filename=data.get("wheel_filename", ""),
+            wheel_sha256=data.get("wheel_sha256", ""),
         )
 
 

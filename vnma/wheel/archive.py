@@ -38,6 +38,11 @@ class WheelArchive:
         if any(p in ("..", "") for p in parts if p == ".."):
             raise SecurityError(f"Unsafe relative path segment in wheel entry: {raw_filename}")
 
+        if parts and parts[0] == ".vnma_meta":
+            raise SecurityError(
+                f"Access denied: wheel cannot target internal VNMA metadata path: {raw_filename}"
+            )
+
         is_script = False
         if len(parts) >= 3 and parts[0].endswith(".data"):
             category = parts[1].lower()

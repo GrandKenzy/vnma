@@ -87,7 +87,32 @@ class ProjectContext(VisitableProject):
         return current
 
     def _determine_vendor_dir_name(self) -> str:
-        """Select vendor directory name avoiding collisions with external vendor folders."""
+        """Select vendor directory name prioritizing project configuration over heuristic fallback."""
+        config_file = self.project_root / "vnma.toml"
+        pyproject_file = self.project_root / "pyproject.toml"
+
+        if config_file.is_file():
+            try:
+                import tomllib
+                with config_file.open("rb") as f:
+                    data = tomllib.load(f)
+                custom_dir = data.get("tool", {}).get("vnma", {}).get("vendor_dir")
+                if custom_dir:
+                    return str(custom_dir)
+            except Exception:
+                pass
+
+        if pyproject_file.is_file():
+            try:
+                import tomllib
+                with pyproject_file.open("rb") as f:
+                    data = tomllib.load(f)
+                custom_dir = data.get("tool", {}).get("vnma", {}).get("vendor_dir")
+                if custom_dir:
+                    return str(custom_dir)
+            except Exception:
+                pass
+
         default_vendor = self.project_root / "vendor"
         meta_marker = default_vendor / ".vnma_meta"
 
@@ -104,3 +129,4 @@ class ProjectContext(VisitableProject):
             pass
 
         return "vendor_vnma"
+

@@ -115,6 +115,64 @@ class TestConfigHandler(unittest.TestCase):
             self.assertEqual(spec_map["git-pkg"].git_url, "https://fake.git")
             self.assertEqual(spec_map["git-pkg"].git_ref, "release")
 
+    def test_pyproject_dependency_addition_and_removal(self) -> None:
+        """Verify add_dependency and remove_dependency modify pyproject.toml without creating vnma.toml."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            pyproject_file = project_dir / "pyproject.toml"
+            config_file = project_dir / "vnma.toml"
+
+            initial_content = (
+                "[build-system]\n"
+                'requires = ["flit_core >=3.2,<4"]\n'
+                'build-backend = "flit_core.buildapi"\n\n'
+                "[project]\n"
+                'name = "my-awesome-app"\n'
+                'version = "1.0.0"\n'
+            )
+            pyproject_file.write_text(initial_content, encoding="utf-8")
+
+            ConfigHandler.add_dependency(
+                config_file,
+                "httpx",
+                ">=0.27.0",
+                pyproject_path=pyproject_file,
+            )
+
+            self.assertFalse(config_file.exists())
+            updated_content = pyproject_file.read_text(encoding="utf-8")
+            self.assertIn("[tool.vnma.dependencies]", updated_content)
+            self.assertIn('httpx = ">=0.27.0"', updated_content)
+            self.assertIn("[build-system]", updated_content)
+
+            loaded = ConfigHandler.load(config_file, pyproject_path=pyproject_file)
+            self.assertEqual(loaded.project_name, "my-awesome-app")
+            self.assertIn("httpx", loaded.dependencies)
+
+            ConfigHandler.remove_dependency(
+                config_file,
+                "httpx",
+                pyproject_path=pyproject_file,
+            )
+            cleared_content = pyproject_file.read_text(encoding="utf-8")
+            self.assertNotIn('httpx = ">=0.27.0"', cleared_content)
+            self.assertIn("[build-system]", cleared_content)
+
+    def test_vendor_dir_configuration_precedence(self) -> None:
+        """Verify ProjectContext reads custom vendor_dir configured in vnma.toml or pyproject.toml."""
+        from vnma.core.context import ProjectContext
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            pyproject = project_dir / "pyproject.toml"
+            pyproject.write_text(
+                '[project]\nname = "test-pkg"\n\n[tool.vnma]\nvendor_dir = "my_vendor_folder"\n',
+                encoding="utf-8",
+            )
+            ctx = ProjectContext(start_path=project_dir)
+            self.assertEqual(ctx.vendor_name, "my_vendor_folder")
+            self.assertEqual(ctx.vendor_path, project_dir / "my_vendor_folder")
+
 
 if __name__ == "__main__":
     unittest.main()
+

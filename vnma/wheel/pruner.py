@@ -57,11 +57,20 @@ class OrphanPruner:
             except OSError:
                 continue
 
+            pkg_extras = tuple(
+                set(record.active_extras)
+                | set(
+                    spec.extras
+                    for spec in root_specs
+                    if normalize_package_name(spec.name) == pkg_name
+                )
+            )
+
             for line in content.splitlines():
                 if not line.startswith("Requires-Dist:"):
                     continue
                 raw_req = line[len("Requires-Dist:") :].strip()
-                if not WheelResolver._evaluate_marker(raw_req, ()):
+                if not WheelResolver._evaluate_marker(raw_req, pkg_extras):
                     continue
                 dep_spec = PackageSpec.parse(raw_req)
                 norm_dep = normalize_package_name(dep_spec.name)

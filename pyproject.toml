@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vnma"
-version = "0.1.1"
+version = "0.2.0"
 description = "Vendor Manager for Python — hermetic, zero-venv dependency management."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -24,7 +24,9 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = [
+    "packaging>=24.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/GrandKenzy/vnma"

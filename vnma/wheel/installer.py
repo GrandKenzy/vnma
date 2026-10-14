@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -33,12 +34,18 @@ class WheelInstaller:
         package_name: str,
         version: str,
         package_config: PackageConfig | None = None,
+        active_extras: Sequence[str] = (),
     ) -> InstalledPackageRecord:
         """Extract wheel, run artifact analysis visitors, and update manifests."""
         self._context.ensure_directories()
         norm_name = normalize_package_name(package_name)
 
         manifest = self._load_manifest()
+        previous_record = manifest.packages.get(norm_name)
+        previous_files: set[str] = (
+            {f.relative_path for f in previous_record.files} if previous_record else set()
+        )
+
         existing_dlls: dict[str, tuple[str, str]] = {}
         for pkg_name, pkg in manifest.packages.items():
             if pkg_name == norm_name:
@@ -58,6 +65,25 @@ class WheelInstaller:
             visitors=[record_visitor, binary_visitor, script_visitor],
         )
 
+        new_files: set[str] = {f.relative_path for f in record_visitor.installed_files}
+        obsolete_files = previous_files - new_files
+
+        if obsolete_files:
+            claimed_by_others: set[str] = {
+                f.relative_path
+                for other_name, other_pkg in manifest.packages.items()
+                if other_name != norm_name
+                for f in other_pkg.files
+            }
+            vendor_root = self._context.vendor_path
+            for rel in obsolete_files:
+                if rel in claimed_by_others:
+                    continue
+                target = vendor_root / rel
+                if target.is_file():
+                    target.unlink()
+                    self._prune_empty_parents(target.parent, vendor_root)
+
         for warning in binary_visitor.collisions:
             print(f"[vnma] WARNING: {warning}")
 
@@ -73,6 +99,12 @@ class WheelInstaller:
                 merged_entry_points[cmd_name] = target
                 script_visitor._generate_executable_wrapper(cmd_name, target)
 
+        hasher = hashlib.sha256()
+        with wheel_path.open("rb") as f:
+            while chunk := f.read(65536):
+                hasher.update(chunk)
+        wheel_sha = hasher.hexdigest()
+
         package_record = InstalledPackageRecord(
             name=norm_name,
             version=version,
@@ -80,6 +112,9 @@ class WheelInstaller:
             dll_directories=dll_dirs,
             entry_points=merged_entry_points,
             has_native_binaries=binary_visitor.has_binaries if not package_config else (package_config.package_type == "native"),
+            active_extras=list(active_extras),
+            wheel_filename=wheel_path.name,
+            wheel_sha256=wheel_sha,
         )
 
         self._update_manifest(package_record)
@@ -88,6 +123,16 @@ class WheelInstaller:
         self._sync_environment()
 
         return package_record
+
+    def _prune_empty_parents(self, directory: Path, stop_at: Path) -> None:
+        """Recursively delete empty directories up to the vendor root."""
+        current = directory
+        while current != stop_at and current.is_relative_to(stop_at):
+            try:
+                current.rmdir()
+                current = current.parent
+            except OSError:
+                break
 
     def _update_manifest(self, record: InstalledPackageRecord) -> None:
         """Atomically persist installed package record into project manifest."""
