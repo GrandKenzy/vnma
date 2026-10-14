@@ -47,13 +47,25 @@ class VSCodeConfigVisitor(ProjectVisitor):
             except Exception:
                 settings = {}
 
+        linked_paths: list[str] = []
+        try:
+            from vnma.core.config import ConfigHandler
+            config = ConfigHandler.load(context.config_path, context.pyproject_path)
+            for spec in config.get_all_specs(include_dev=True):
+                if spec.editable and spec.path and spec.path.is_dir():
+                    linked_paths.append(str(spec.path))
+        except Exception:
+            pass
+
+        target_paths = [vendor_rel, *linked_paths]
         changed = False
         for key in ("python.analysis.extraPaths", "python.autoComplete.extraPaths"):
             current_paths = list(settings.get(key, []))
-            if vendor_rel not in current_paths:
-                current_paths.append(vendor_rel)
-                settings[key] = current_paths
-                changed = True
+            for p in target_paths:
+                if p not in current_paths:
+                    current_paths.append(p)
+                    changed = True
+            settings[key] = current_paths
 
         if changed or not settings_file.exists():
             vscode_dir.mkdir(parents=True, exist_ok=True)

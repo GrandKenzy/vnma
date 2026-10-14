@@ -195,3 +195,61 @@ Following standard lockfile semantics, `vnma update` respects explicit user pins
 * Packages with floating constraints (e.g., `*`, `>=2.0.0`, `~=1.5.0`) or floating Git branches (`main`) are upgraded to their latest release.
 
 Upgrades are performed transactionally: obsolete files from previous package versions are safely deleted from `vendor/` without touching shared namespace packages, and `vnma.lock` is updated deterministically.
+
+---
+
+## 8. Live Development Links (`vnma link`, `vnma unlink`, `vnma reload`)
+
+When developing a library (such as an internal SDK or framework like `Gram`) alongside an application that consumes it, rebuilding and installing wheels on every edit slows down iteration.
+
+`vnma` provides zero-copy live development links:
+
+### A. Linking a Local Source Tree (`vnma link`)
+
+```bash
+vnma link "C:/Users/Kentucky/Desktop/Gram"
+# or relative path:
+vnma link ../Gram
+```
+
+1. **Zero-Copy**: Does not copy files into `vendor/`.
+2. **Instant Reflection**: Source changes in the linked library take effect immediately on the next execution (`vnma run` or `import vendor`).
+3. **Dependency Resolution**: Inspects `vnma_config.toml` or `pyproject.toml` in the target directory and automatically resolves and installs any declared dependencies into `vendor/`.
+4. **IDE Autocompletion**: Injects the target directory into `.vscode/settings.json` (`python.analysis.extraPaths`) and `.env`.
+
+In `vnma.toml`, it is stored as:
+```toml
+[dependencies]
+gram = { path = "C:/Users/Kentucky/Desktop/Gram", editable = true }
+```
+
+---
+
+### B. Unlinking a Package (`vnma unlink`)
+
+To remove a linked package:
+
+```bash
+# By package name:
+vnma unlink gram
+
+# Or by directory path:
+vnma unlink "C:/Users/Kentucky/Desktop/Gram"
+```
+
+This removes the dependency from `vnma.toml`, clears its search path from `__bootstrap__.py`, and updates IDE configurations.
+
+---
+
+### C. Reconciling & Auto-Pruning (`vnma reload`)
+
+To verify the integrity of all linked dependencies, resolve newly added requirements, and automatically prune packages that are no longer referenced:
+
+```bash
+vnma reload
+```
+
+* **Integrity Audit**: Checks that all linked directories exist. If a folder was moved or deleted, it aborts with an aesthetic warning box.
+* **Auto-Pruning**: If a linked library removed a dependency (or if the library was unlinked), `vnma reload` automatically detects that the package is no longer needed by any part of the project and removes it from `vendor/`.
+* **Execution Protection in `vnma run`**: Before running any script, `vnma run` verifies that all linked directories exist, halting with a helpful message instead of raising confusing import tracebacks if a directory is missing.
+

@@ -38,6 +38,7 @@ class VnmaConfig:
                         PackageSpec(
                             name=norm_name,
                             path=Path(value["path"]).resolve(),
+                            editable=bool(value.get("editable", False)),
                         )
                     )
                 elif "git" in value:
@@ -99,7 +100,14 @@ class ConfigHandler:
         ]
         for name, req in sorted(config.dependencies.items()):
             if isinstance(req, dict):
-                formatted_inner = ", ".join(f'{k} = "{v}"' for k, v in req.items())
+                parts = []
+                for k, v in req.items():
+                    if isinstance(v, bool):
+                        parts.append(f"{k} = {'true' if v else 'false'}")
+                    else:
+                        clean_v = str(v).replace("\\", "/")
+                        parts.append(f'{k} = "{clean_v}"')
+                formatted_inner = ", ".join(parts)
                 lines.append(f"{name} = {{ {formatted_inner} }}")
             else:
                 lines.append(f'{name} = "{req}"')
@@ -110,7 +118,14 @@ class ConfigHandler:
         ])
         for name, req in sorted(config.dev_dependencies.items()):
             if isinstance(req, dict):
-                formatted_inner = ", ".join(f'{k} = "{v}"' for k, v in req.items())
+                parts = []
+                for k, v in req.items():
+                    if isinstance(v, bool):
+                        parts.append(f"{k} = {'true' if v else 'false'}")
+                    else:
+                        clean_v = str(v).replace("\\", "/")
+                        parts.append(f'{k} = "{clean_v}"')
+                formatted_inner = ", ".join(parts)
                 lines.append(f"{name} = {{ {formatted_inner} }}")
             else:
                 lines.append(f'{name} = "{req}"')
@@ -131,8 +146,11 @@ class ConfigHandler:
                         lines.append(f'{k} = {v!r}'.replace("'", '"'))
                     elif isinstance(v, dict):
                         lines.append(f'{k} = {v!r}'.replace("'", '"'))
+                    elif isinstance(v, bool):
+                        lines.append(f"{k} = {'true' if v else 'false'}")
                     else:
-                        lines.append(f'{k} = "{v}"')
+                        clean_v = str(v).replace("\\", "/")
+                        lines.append(f'{k} = "{clean_v}"')
 
         lines.append("")
         config_path.write_text("\n".join(lines), encoding="utf-8")
@@ -141,7 +159,14 @@ class ConfigHandler:
     def _format_entry_line(name: str, value: Any) -> str:
         """Format dependency key and value for TOML persistence."""
         if isinstance(value, dict):
-            formatted_inner = ", ".join(f'{k} = "{v}"' for k, v in value.items())
+            parts = []
+            for k, v in value.items():
+                if isinstance(v, bool):
+                    parts.append(f"{k} = {'true' if v else 'false'}")
+                else:
+                    clean_v = str(v).replace("\\", "/")
+                    parts.append(f'{k} = "{clean_v}"')
+            formatted_inner = ", ".join(parts)
             return f"{name} = {{ {formatted_inner} }}"
         return f'{name} = "{value}"'
 

@@ -56,7 +56,10 @@ class BootstrapGenerator:
             "def _apply_hermetic_projection() -> None:\n"
             "    extra_dirs = []\n"
             "    for rel in _EXTRA_MODULE_PATHS:\n"
-            "        cand = os.path.realpath(os.path.join(_VENDOR_STR, rel)) if rel else _VENDOR_STR\n"
+            "        if os.path.isabs(rel):\n"
+            "            cand = os.path.realpath(rel)\n"
+            "        else:\n"
+            "            cand = os.path.realpath(os.path.join(_VENDOR_STR, rel)) if rel else _VENDOR_STR\n"
             "        if os.path.isdir(cand) and cand not in extra_dirs:\n"
             "            extra_dirs.append(cand)\n\n"
             '    if os.environ.get("VNMA_HERMETIC", "1" if _HERMETIC_DEFAULT else "0") != "1":\n'

@@ -29,6 +29,7 @@ class PackageSpec:
     path: Path | None = None
     git_url: str | None = None
     git_ref: str | None = None
+    editable: bool = False
 
     @classmethod
     def parse(cls, raw: str) -> PackageSpec:

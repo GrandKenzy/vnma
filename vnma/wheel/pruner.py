@@ -95,7 +95,10 @@ class OrphanPruner:
 
         return reachable
 
-    def find_orphans(self) -> list[str]:
+    def find_orphans(
+        self,
+        extra_root_specs: Sequence[PackageSpec] | None = None,
+    ) -> list[str]:
         """Identify installed packages that are not reachable from project configuration."""
         if not self._context.manifest_path.is_file():
             return []
@@ -107,16 +110,22 @@ class OrphanPruner:
             return []
 
         config = ConfigHandler.load(self._context.config_path, self._context.pyproject_path)
-        root_specs = config.get_all_specs()
+        root_specs = list(config.get_all_specs(include_dev=True))
+        if extra_root_specs:
+            root_specs.extend(extra_root_specs)
 
         reachable = self.compute_reachable_packages(root_specs, manifest)
         installed = set(manifest.packages.keys())
         orphans = sorted(installed - reachable)
         return orphans
 
-    def prune(self, dry_run: bool = False) -> list[str]:
+    def prune(
+        self,
+        dry_run: bool = False,
+        extra_root_specs: Sequence[PackageSpec] | None = None,
+    ) -> list[str]:
         """Purge orphaned packages and synchronize lockfile."""
-        orphans = self.find_orphans()
+        orphans = self.find_orphans(extra_root_specs=extra_root_specs)
         if dry_run or not orphans:
             return orphans
 

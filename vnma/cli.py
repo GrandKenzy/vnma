@@ -8,6 +8,7 @@ from pathlib import Path
 
 from vnma.core.config import ConfigHandler, VnmaConfig
 from vnma.core.context import ProjectContext
+from vnma.core.link_manager import LinkManager
 from vnma.core.lockfile import LockfileHandler
 from vnma.core.models import PackageSpec, normalize_package_name
 from vnma.core.package_config import PackageConfig
@@ -615,6 +616,12 @@ def cmd_sync_ide(args: argparse.Namespace, context: ProjectContext) -> int:
 
 def cmd_run(args: argparse.Namespace, context: ProjectContext) -> int:
     """Execute a Python script or entrypoint with the vendor directory configured."""
+    manager = LinkManager(context)
+    broken = manager.verify_links()
+    if broken:
+        print(manager.render_broken_links_alert(broken))
+        return 1
+
     target = args.target
     extra_args = list(args.args)
     if target and target.startswith("-"):
@@ -630,6 +637,99 @@ def cmd_run(args: argparse.Namespace, context: ProjectContext) -> int:
 
     runner = ScriptRunner(context)
     return runner.run_script(script_path, extra_args)
+
+
+def cmd_link(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Link a local directory in zero-copy live development mode."""
+    context.ensure_directories()
+    manager = LinkManager(context)
+    try:
+        linked_spec, deps = manager.link(args.path)
+    except FileNotFoundError:
+        alert = LinkManager.render_broken_links_alert([(args.path, Path(args.path))])
+        print(alert)
+        return 1
+
+    print(f"[vnma] Successfully linked '{linked_spec.name}' from {linked_spec.path}")
+    print("[vnma] Mode: Live development (Zero-Copy). Changes in source files apply immediately.")
+
+    if deps:
+        print(f"[vnma] Resolving {len(deps)} declared dependency/dependencies for '{linked_spec.name}'...")
+        cache = WheelCache()
+        installer = WheelInstaller(context)
+        resolver = WheelResolver(cache, LocalWheelIndex())
+        try:
+            resolved = resolver.resolve_graph(deps)
+        except (DependencyConflictError, ValueError) as err:
+            print(f"[vnma] Resolution error for linked package dependencies: {err}")
+            return 1
+        for r_spec, wheel_rel in resolved:
+            _download_and_install(r_spec, wheel_rel, cache, installer)
+        LockfileHandler.update(context)
+
+    return 0
+
+
+def cmd_unlink(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Remove a linked local package and restore standard configuration."""
+    manager = LinkManager(context)
+    unlinked = manager.unlink(args.target)
+    if not unlinked:
+        print(f"[vnma] Error: No linked package matching '{args.target}' found.")
+        return 1
+
+    print(f"[vnma] Successfully unlinked '{unlinked.name}'.")
+    print("[vnma] Tip: Run 'vnma reload' to automatically prune dependencies that are no longer needed.")
+    return 0
+
+
+def cmd_reload(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Verify links, reconcile transitive dependencies, and automatically prune orphans."""
+    context.ensure_directories()
+    manager = LinkManager(context)
+    broken = manager.verify_links()
+    if broken:
+        print(manager.render_broken_links_alert(broken))
+        return 1
+
+    linked_specs = manager.get_linked_specs()
+    extra_deps: list[PackageSpec] = []
+    for l_spec in linked_specs:
+        if l_spec.path and l_spec.path.is_dir():
+            _, _, deps = manager.inspect_target(l_spec.path)
+            extra_deps.extend(deps)
+
+    config = ConfigHandler.load(context.config_path, context.pyproject_path)
+    root_specs = config.get_all_specs(include_dev=True)
+    pypi_specs = [s for s in root_specs if not s.path and not s.git_url]
+    pypi_specs.extend([s for s in extra_deps if not s.path and not s.git_url])
+
+    cache = WheelCache()
+    installer = WheelInstaller(context)
+    resolver = WheelResolver(cache, LocalWheelIndex())
+
+    if pypi_specs:
+        try:
+            resolved = resolver.resolve_graph(pypi_specs)
+        except (DependencyConflictError, ValueError) as err:
+            print(f"[vnma] Reload resolution error: {err}")
+            return 1
+
+        manifest = installer._load_manifest()
+        for r_spec, wheel_rel in resolved:
+            expected_ver = r_spec.specifier.lstrip("=")
+            if r_spec.name not in manifest.packages or (expected_ver and manifest.packages[r_spec.name].version != expected_ver):
+                _download_and_install(r_spec, wheel_rel, cache, installer)
+
+    pruner = OrphanPruner(context)
+    pruned = pruner.prune(dry_run=False, extra_root_specs=extra_deps)
+    if pruned:
+        print(f"[vnma] Automatically pruned {len(pruned)} unused package(s): {', '.join(pruned)}")
+
+    manager.sync_bootstrap()
+    LockfileHandler.update(context)
+    print(f"[vnma] Reload completed successfully ({len(linked_specs)} link(s) active).")
+    return 0
 
 
 def cmd_exec(args: argparse.Namespace, context: ProjectContext) -> int:
@@ -790,6 +890,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync_parser = subparsers.add_parser("sync-ide", help="Synchronize IDE settings for VS Code and PyCharm")
     sync_parser.set_defaults(handler=cmd_sync_ide)
+
+    link_parser = subparsers.add_parser(
+        "link", help="Link a local directory in zero-copy live development mode"
+    )
+    link_parser.add_argument("path", help="Path to local package directory")
+    link_parser.set_defaults(handler=cmd_link)
+
+    unlink_parser = subparsers.add_parser("unlink", help="Unlink a local package directory")
+    unlink_parser.add_argument("target", help="Package name or directory path to unlink")
+    unlink_parser.set_defaults(handler=cmd_unlink)
+
+    reload_parser = subparsers.add_parser(
+        "reload", help="Verify links, reconcile dependencies, and prune orphans"
+    )
+    reload_parser.set_defaults(handler=cmd_reload)
 
     run_parser = subparsers.add_parser("run", help="Run a Python script with vendor environment active")
     run_parser.add_argument(

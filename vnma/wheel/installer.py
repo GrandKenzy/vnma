@@ -201,6 +201,12 @@ class WheelInstaller:
             if not pkg.hermetic:
                 all_hermetic = False
 
+        from vnma.core.link_manager import LinkManager
+        for linked in LinkManager(self._context).get_linked_specs():
+            if linked.path and linked.path.is_dir():
+                _, module_paths, _ = LinkManager.inspect_target(linked.path)
+                all_modules.update(module_paths)
+
         generator = BootstrapGenerator(self._context.vendor_path)
         generator.generate(
             dll_subdirectories=sorted(all_dll_dirs),

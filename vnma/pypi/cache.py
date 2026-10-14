@@ -64,7 +64,7 @@ class WheelCache:
         else:
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "vnma/0.2.3"},
+                headers={"User-Agent": "vnma/0.2.4"},
             )
             with urllib.request.urlopen(req) as response, temp_target.open("wb") as out:
                 while chunk := response.read(65536):
