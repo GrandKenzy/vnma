@@ -779,6 +779,7 @@ def cmd_reload(args: argparse.Namespace, context: ProjectContext) -> int:
         print(f"[vnma] Automatically pruned {len(pruned)} unused package(s): {', '.join(pruned)}")
 
     manager.sync_bootstrap()
+    manager._sync_environment()
     LockfileHandler.update(context)
     print(f"[vnma] Reload completed successfully ({len(linked_specs)} link(s) active).")
     return 0

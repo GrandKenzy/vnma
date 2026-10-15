@@ -95,6 +95,43 @@ class TestProjectVisitors(unittest.TestCase):
             settings = json.loads(settings_file.read_text(encoding="utf-8"))
             self.assertIn("./vendor", settings.get("python.analysis.extraPaths", []))
 
+    def test_vscode_config_visitor_linked_packages_and_cleanup(self) -> None:
+        """Verify linked packages resolve to relative and absolute extraPaths while pruning userHome."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            lib_dir = base_dir / "external_pkg"
+            lib_dir.mkdir()
+            (lib_dir / "pyproject.toml").write_text('[project]\nname="external-pkg"\nversion="1.0.0"\n', encoding="utf-8")
+            (lib_dir / "external_pkg").mkdir()
+            (lib_dir / "external_pkg" / "__init__.py").write_text("x = 1\n", encoding="utf-8")
+
+            project_dir = base_dir / "my_project"
+            project_dir.mkdir()
+            vscode_dir = project_dir / ".vscode"
+            vscode_dir.mkdir()
+            stale_settings = {
+                "python.analysis.extraPaths": ["./vendor", "${userHome}/old/path"],
+                "python.autoComplete.extraPaths": ["./vendor", "${userHome}/old/path"],
+            }
+            (vscode_dir / "settings.json").write_text(json.dumps(stale_settings), encoding="utf-8")
+
+            lib_posix = lib_dir.resolve().as_posix()
+            (project_dir / "vnma.toml").write_text(
+                f'[project]\nname="my_project"\n\n[dependencies]\nexternal-pkg = {{ path = "{lib_posix}", editable = true }}\n',
+                encoding="utf-8",
+            )
+            context = ProjectContext(start_path=project_dir)
+
+            visitor = VSCodeConfigVisitor()
+            changed = visitor.visit_project(context)
+            self.assertTrue(changed)
+
+            updated_settings = json.loads((vscode_dir / "settings.json").read_text(encoding="utf-8"))
+            extra_paths = updated_settings["python.analysis.extraPaths"]
+            self.assertIn("./vendor", extra_paths)
+            self.assertNotIn("${userHome}/old/path", extra_paths)
+            self.assertTrue(any("external_pkg" in p for p in extra_paths))
+
     def test_gitignore_visitor_idempotency(self) -> None:
         """Verify gitignore entries are added only once."""
         with tempfile.TemporaryDirectory() as tmp_dir:
