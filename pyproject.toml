@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vnma"
-version = "0.2.7"
+version = "0.2.8"
 description = "Vendor Manager for Python — hermetic, zero-venv dependency management."
 readme = "README.md"
 license = { file = "LICENSE" }

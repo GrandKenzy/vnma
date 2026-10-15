@@ -130,6 +130,11 @@ class LinkManager:
 
         pkg_name, module_paths, deps = self.inspect_target(resolved_path)
 
+        from vnma.wheel.uninstaller import WheelUninstaller
+        uninstaller = WheelUninstaller(self._context)
+        if pkg_name in uninstaller._load_manifest().packages:
+            uninstaller.uninstall(pkg_name)
+
         portable_path = PortablePathResolver.to_portable_string(resolved_path, base_dir=self._context.project_root)
         ConfigHandler.add_dependency(
             self._context.config_path,

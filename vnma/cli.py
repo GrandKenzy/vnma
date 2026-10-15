@@ -148,7 +148,11 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         pypi_specs: list[PackageSpec] = []
         for spec in specs:
             if spec.path:
-                _install_local_spec(spec, builder, installer)
+                if spec.editable:
+                    link_spec, link_deps = LinkManager(context).link(str(spec.path))
+                    pypi_specs.extend(link_deps)
+                else:
+                    _install_local_spec(spec, builder, installer)
             elif spec.git_url:
                 if offline:
                     print(f"[vnma] WARNING: Git dependency '{spec.name}' may require network connectivity.")
@@ -175,6 +179,21 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         return 0
 
     root_spec = PackageSpec.parse(target_pkg)
+    is_editable = getattr(args, "editable", False) or root_spec.editable
+
+    if is_editable:
+        target_path = str(root_spec.path or target_pkg)
+        link_spec, link_deps = LinkManager(context).link(target_path)
+        if link_deps:
+            try:
+                resolved_pairs = resolver.resolve_graph(link_deps)
+                for dep_spec, wheel_rel in resolved_pairs:
+                    _download_and_install(dep_spec, wheel_rel, cache, installer)
+            except Exception:
+                pass
+        LockfileHandler.update(context)
+        print(f"[vnma] Synchronized {context.lock_path.name}")
+        return 0
 
     if root_spec.path:
         record = _install_local_spec(root_spec, builder, installer)
@@ -367,6 +386,12 @@ def _restore_from_lock(
                 continue
 
         source = info.get("source", "pypi")
+        if source == "editable" or info.get("editable"):
+            from vnma.core.path_resolver import PortablePathResolver
+            local_path = PortablePathResolver.expand(info.get("path", ""), base_dir=context.project_root)
+            LinkManager(context).link(str(local_path))
+            continue
+
         if source == "local":
             local_path = Path(info.get("path", ""))
             spec = PackageSpec(name=norm_name, path=local_path, extras=extras)
@@ -842,6 +867,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Directory to search for local wheel archives",
+    )
+    install_parser.add_argument(
+        "-e",
+        "--editable",
+        action="store_true",
+        help="Install local package directory in editable (zero-copy link) mode",
     )
     install_parser.add_argument(
         "--dev",

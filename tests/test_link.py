@@ -97,6 +97,41 @@ class TestLinkManager(unittest.TestCase):
             self.assertEqual(ret2, 0)
             self.assertEqual(output_file.read_text(encoding="utf-8"), "updated_live")
 
+    def test_install_editable_from_vnma_toml_zero_copy(self) -> None:
+        """Verify vnma install on editable dependency performs zero-copy link without copying files into vendor."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            lib_dir = base_dir / "external_lib"
+            lib_dir.mkdir()
+            (lib_dir / "vnma_config.toml").write_text(
+                '[package]\nname = "ext-lib"\nversion = "1.0.0"\n\n[exports]\nmodules = ["ext_lib"]\n',
+                encoding="utf-8",
+            )
+            code_dir = lib_dir / "ext_lib"
+            code_dir.mkdir()
+            (code_dir / "__init__.py").write_text("DATA = 42\n", encoding="utf-8")
+
+            proj_dir = base_dir / "project"
+            proj_dir.mkdir()
+            lib_posix = lib_dir.resolve().as_posix()
+            (proj_dir / "vnma.toml").write_text(
+                f'[project]\nname = "project"\n\n[dependencies]\next-lib = {{ path = "{lib_posix}", editable = true }}\n',
+                encoding="utf-8",
+            )
+
+            context = ProjectContext(start_path=proj_dir)
+            parser = build_parser()
+            install_args = parser.parse_args(["install"])
+            ret = install_args.handler(install_args, context)
+
+            self.assertEqual(ret, 0)
+            self.assertFalse((context.vendor_path / "ext_lib").exists())
+            self.assertFalse((context.vendor_path / "ext_lib-1.0.0.dist-info").exists())
+
+            bootstrap_content = (context.vendor_path / "__bootstrap__.py").read_text(encoding="utf-8")
+            portable_expected = PortablePathResolver.to_portable_string(lib_dir)
+            self.assertIn(portable_expected, bootstrap_content)
+
     def test_unlink_package(self) -> None:
         """Verify unlinking removes configuration and cleans bootstrap."""
         with tempfile.TemporaryDirectory() as tmp_dir:

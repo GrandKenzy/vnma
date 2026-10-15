@@ -10,6 +10,7 @@ from typing import Any
 from vnma.core.config import ConfigHandler
 from vnma.core.context import ProjectContext
 from vnma.core.models import VnmaManifest, normalize_package_name
+from vnma.core.path_resolver import PortablePathResolver
 
 
 class LockfileHandler:
@@ -43,7 +44,10 @@ class LockfileHandler:
             if spec.name not in packages:
                 return False
             pkg_data = packages[spec.name]
-            if spec.path:
+            if spec.editable:
+                if not pkg_data.get("editable") or pkg_data.get("source") != "editable":
+                    return False
+            elif spec.path:
                 if pkg_data.get("source") != "local":
                     return False
             elif spec.git_url:
@@ -70,10 +74,14 @@ class LockfileHandler:
             return False
 
         locked_pkgs = lock_data.get("packages", {})
-        if set(manifest.packages.keys()) != set(locked_pkgs.keys()):
+        non_editable_locked = {
+            name: info for name, info in locked_pkgs.items()
+            if not info.get("editable") and info.get("source") != "editable"
+        }
+        if set(manifest.packages.keys()) != set(non_editable_locked.keys()):
             return False
 
-        for name, locked_info in locked_pkgs.items():
+        for name, locked_info in non_editable_locked.items():
             record = manifest.packages[name]
             if record.version != locked_info.get("version"):
                 return False
@@ -124,6 +132,15 @@ class LockfileHandler:
                 "dll_directories": record.dll_directories,
                 "files_count": len(record.files),
             }
+
+        for spec in config.get_all_specs():
+            if spec.editable and spec.path:
+                portable = PortablePathResolver.to_portable_string(spec.path, context.project_root)
+                locked_packages[spec.name] = {
+                    "source": "editable",
+                    "path": portable,
+                    "editable": True,
+                }
 
         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         lock_payload = {

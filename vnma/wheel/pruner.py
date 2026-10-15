@@ -81,6 +81,8 @@ class OrphanPruner:
         queue: deque[str] = deque()
 
         for spec in root_specs:
+            if spec.editable:
+                continue
             norm_root = normalize_package_name(spec.name)
             if norm_root in manifest.packages and norm_root not in reachable:
                 reachable.add(norm_root)
