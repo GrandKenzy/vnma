@@ -79,6 +79,13 @@ class TestEnvironmentMarkers(unittest.TestCase):
         self.assertFalse(WheelResolver._evaluate_marker(req, ()))
         self.assertTrue(WheelResolver._evaluate_marker(req, ("socks",)))
 
+    def test_any_selected_extra_can_activate_dependency(self) -> None:
+        """A second requested extra must not be skipped when the first doesn't match."""
+        req = "second-child>=1; extra == 'second'"
+        self.assertTrue(WheelResolver._evaluate_marker(req, ("first", "second")))
+        self.assertFalse(WheelResolver._evaluate_marker(req, ("first",)))
+        self.assertFalse(WheelResolver._evaluate_marker(req, ()))
+
 
 class TestTransitiveGraphResolution(unittest.TestCase):
     """Test resolving dependency DAGs and detecting diamond conflicts."""
