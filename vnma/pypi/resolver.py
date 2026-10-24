@@ -69,93 +69,157 @@ class WheelResolver:
     def resolve_graph(
         self, root_specs: Sequence[PackageSpec]
     ) -> list[tuple[PackageSpec, WheelRelease]]:
-        """Resolve transitive dependency graph with cumulative constraints and retraction."""
-        constraints_by_pkg: dict[str, list[tuple[str, str]]] = {}
-        extras_by_pkg: dict[str, set[str]] = {}
-        resolved_wheels: dict[str, WheelRelease] = {}
-        direct_deps: dict[str, list[PackageSpec]] = {}
+        """Resolve a dependency DAG via deterministic bounded backtracking.
 
-        queue: deque[tuple[PackageSpec, str]] = deque((s, "root") for s in root_specs)
+        Each decision rebuilds constraints from currently selected versions.
+        Discarded versions therefore cannot leave stale transitive constraints.
+        """
+        from collections import defaultdict
 
-        while queue:
-            current_spec, requester = queue.popleft()
-            pkg = normalize_package_name(current_spec.name)
+        wheel_cache: dict[str, list[WheelRelease]] = {}
+        metadata_cache: dict[tuple[str, str], tuple[str, ...]] = {}
+        attempted = 0
+        max_decisions = 10000
 
-            constraints_by_pkg.setdefault(pkg, []).append((requester, current_spec.specifier))
-            extras_by_pkg.setdefault(pkg, set()).update(current_spec.extras)
+        def candidates(name: str) -> list[WheelRelease]:
+            if name not in wheel_cache:
+                releases = self._client.fetch_wheel_releases(name)
+                compatible = [
+                    release for release in releases
+                    if self._matcher.get_tag_priority(release.filename) >= 0
+                ]
+                version_parser = Version if Version is not None else self._parse_version_tuple
+                compatible.sort(
+                    key=lambda release: (
+                        version_parser(release.version),
+                        -self._matcher.get_tag_priority(release.filename),
+                    ),
+                    reverse=True,
+                )
+                # Exactly one wheel per version, choosing the best platform tag.
+                per_version: dict[str, WheelRelease] = {}
+                for release in compatible:
+                    per_version.setdefault(release.version, release)
+                wheel_cache[name] = list(per_version.values())
+            return wheel_cache[name]
 
-            combined_spec_str = ",".join(
-                s for _, s in constraints_by_pkg[pkg] if s and s != "*"
+        def requirements_for(
+            selected: dict[str, WheelRelease],
+        ) -> tuple[dict[str, list[tuple[str, str]]], dict[str, set[str]]]:
+            constraints: dict[str, list[tuple[str, str]]] = {}
+            extras: dict[str, set[str]] = defaultdict(set)
+            processed: set[tuple[str, tuple[str, ...]]] = set()
+            # Requested dependencies are deduplicated so cyclic graphs terminate.
+            seen_edges: set[tuple[str, PackageSpec]] = set()
+            queue: deque[tuple[PackageSpec, str]] = deque(
+                (spec, "root") for spec in root_specs
             )
+            while queue:
+                spec, parent = queue.popleft()
+                name = normalize_package_name(spec.name)
+                edge = (parent, spec)
+                if edge in seen_edges:
+                    continue
+                seen_edges.add(edge)
+                constraints.setdefault(name, []).append((parent, spec.specifier))
+                extras[name].update(spec.extras)
+                if name not in selected:
+                    continue
+                signature = (name, tuple(sorted(extras[name])))
+                if signature in processed:
+                    continue
+                processed.add(signature)
+                wheel = selected[name]
+                meta_key = (name, wheel.version)
+                if meta_key not in metadata_cache:
+                    data = self._client.fetch_package_data(name, wheel.version)
+                    metadata_cache[meta_key] = tuple(
+                        data.get("info", {}).get("requires_dist") or ()
+                    )
+                for raw_requirement in metadata_cache[meta_key]:
+                    if self._evaluate_marker(raw_requirement, signature[1]):
+                        queue.append(
+                            (PackageSpec.parse(raw_requirement), f"{name}=={wheel.version}")
+                        )
+            return constraints, extras
 
-            already_resolved = resolved_wheels.get(pkg)
-            if already_resolved and self._matches_specifier(already_resolved.version, combined_spec_str):
-                active_extras = tuple(sorted(extras_by_pkg[pkg]))
-                exact_data = self._client.fetch_package_data(pkg, already_resolved.version)
-                raw_reqs = exact_data.get("info", {}).get("requires_dist") or []
-                updated_children: list[PackageSpec] = []
-                for raw_req in raw_reqs:
-                    if not self._evaluate_marker(raw_req, active_extras):
-                        continue
-                    child_spec = PackageSpec.parse(raw_req)
-                    updated_children.append(child_spec)
+        def solve(
+            selected: dict[str, WheelRelease],
+        ) -> tuple[dict[str, WheelRelease], dict[str, set[str]], list[str]]:
+            nonlocal attempted
+            attempted += 1
+            if attempted > max_decisions:
+                raise DependencyConflictError(
+                    f"Dependency resolution exceeded {max_decisions} decisions."
+                )
 
-                new_specs = [c for c in updated_children if c not in direct_deps.get(pkg, [])]
-                if new_specs:
-                    direct_deps[pkg] = updated_children
-                    for child in new_specs:
-                        queue.append((child, f"{pkg}=={already_resolved.version}"))
-                continue
+            constraints, extras = requirements_for(selected)
+            for name, wheel in selected.items():
+                if name not in constraints:
+                    continue
+                if any(
+                    not self._matches_specifier(wheel.version, constraint)
+                    for _, constraint in constraints[name]
+                ):
+                    details = " AND ".join(
+                        f"{requester} requires {name}{specifier or '*'}"
+                        for requester, specifier in constraints[name]
+                    )
+                    raise DependencyConflictError(
+                        f"Diamond Dependency Conflict on '{name}': {details}"
+                    )
 
-            merged_spec = PackageSpec(name=pkg, specifier=combined_spec_str)
-            try:
-                wheel = self.resolve_wheel(merged_spec)
-            except DependencyConflictError as err:
-                req_summary = " AND ".join(
-                    f"{req} requires {pkg}{sp or '*'}" for req, sp in constraints_by_pkg[pkg]
+            # Remove no-longer-reachable packages before deciding anything else.
+            selected = {name: wheel for name, wheel in selected.items() if name in constraints}
+            missing = next((name for name in constraints if name not in selected), None)
+            if missing is None:
+                return selected, extras, list(constraints)
+
+            constraints_for_missing = constraints[missing]
+            eligible = [
+                release for release in candidates(missing)
+                if all(
+                    self._matches_specifier(release.version, specifier)
+                    for _, specifier in constraints_for_missing
+                )
+            ]
+            if not eligible:
+                details = " AND ".join(
+                    f"{requester} requires {missing}{specifier or '*'}"
+                    for requester, specifier in constraints_for_missing
                 )
                 raise DependencyConflictError(
-                    f"Diamond Dependency Conflict on '{pkg}': {req_summary}"
-                ) from err
-
-            resolved_wheels[pkg] = wheel
-            active_extras = tuple(sorted(extras_by_pkg[pkg]))
-            exact_data = self._client.fetch_package_data(pkg, wheel.version)
-            raw_reqs = exact_data.get("info", {}).get("requires_dist") or []
-
-            children: list[PackageSpec] = []
-            for raw_req in raw_reqs:
-                if not self._evaluate_marker(raw_req, active_extras):
-                    continue
-                child_spec = PackageSpec.parse(raw_req)
-                children.append(child_spec)
-
-            direct_deps[pkg] = children
-            for child in children:
-                queue.append((child, f"{pkg}=={wheel.version}"))
-
-        reachable_pkgs: set[str] = set()
-        reach_queue: deque[str] = deque(normalize_package_name(s.name) for s in root_specs)
-        for s in root_specs:
-            reachable_pkgs.add(normalize_package_name(s.name))
-
-        while reach_queue:
-            curr = reach_queue.popleft()
-            for child in direct_deps.get(curr, []):
-                child_norm = normalize_package_name(child.name)
-                if child_norm in resolved_wheels and child_norm not in reachable_pkgs:
-                    reachable_pkgs.add(child_norm)
-                    reach_queue.append(child_norm)
-
-        final_pairs: list[tuple[PackageSpec, WheelRelease]] = []
-        for pkg, whl in resolved_wheels.items():
-            if pkg in reachable_pkgs:
-                pkg_extras = tuple(sorted(extras_by_pkg.get(pkg, set())))
-                final_pairs.append(
-                    (PackageSpec(name=pkg, specifier=f"=={whl.version}", extras=pkg_extras), whl)
+                    f"Diamond Dependency Conflict on '{missing}': {details} "
+                    "(no compatible wheel)"
                 )
 
-        return final_pairs
+            last_error: DependencyConflictError | None = None
+            for wheel in eligible:
+                try:
+                    return solve({**selected, missing: wheel})
+                except DependencyConflictError as err:
+                    if "exceeded" in str(err):
+                        raise
+                    last_error = err
+            raise last_error or DependencyConflictError(
+                f"No compatible dependency graph for '{missing}'."
+            )
+
+        if not root_specs:
+            return []
+        selected, extras, traversal = solve({})
+        return [
+            (
+                PackageSpec(
+                    name=name,
+                    specifier=f"=={selected[name].version}",
+                    extras=tuple(sorted(extras.get(name, set()))),
+                ),
+                selected[name],
+            )
+            for name in traversal
+            if name in selected
+        ]
 
     @staticmethod
     def _evaluate_marker(raw_requirement: str, active_extras: tuple[str, ...]) -> bool:
