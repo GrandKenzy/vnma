@@ -60,3 +60,33 @@ jobs:
         run: |
           python -c "import vnma, importlib.metadata; assert vnma.__version__ == '0.3.0'; assert importlib.metadata.version('vnma') == '0.3.0'"
           python -m vnma --help
+
+  gram-easyc-integration:
+    name: Integration with real Gram and EasyC manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: GrandKenzy/Gram
+          path: interop/Gram
+      - uses: actions/checkout@v4
+        with:
+          repository: GrandKenzy/EasyC
+          path: interop/EasyC
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install development version
+        run: python -m pip install -e .
+      - name: Activate EasyC example's real editable Gram declaration
+        working-directory: interop/EasyC
+        run: |
+          python -c "from pathlib import Path; p=Path('vnma.toml.example'); text=p.read_text(); old='# gram = { path = \"~/Desktop/Gram\", editable = true }'; assert old in text; Path('vnma.toml').write_text(text.replace(old, 'gram = { path = \"../Gram\", editable = true }'))"
+      - name: Link Gram through EasyC and verify import
+        working-directory: interop/EasyC
+        run: |
+          python -m vnma install
+          python -c "from pathlib import Path; Path('verify_gram.py').write_text('import gram\nassert gram.__version__ == \"2.0.0b1\"\n')"
+          python -m vnma run verify_gram.py
+          python -c "from vnma.core.config import ConfigHandler; from pathlib import Path; c=ConfigHandler.load(Path('vnma.toml')); assert set(c.dependencies)=={'gram'}, c.dependencies"
