@@ -11,6 +11,7 @@ from vnma.core.config import ConfigHandler, VnmaConfig
 from vnma.core.context import ProjectContext
 from vnma.core.link_manager import LinkManager
 from vnma.core.lockfile import LockfileHandler
+from vnma.core.transaction import atomic_workspace_command, WorkspaceTransaction
 from vnma.core.models import PackageSpec, normalize_package_name
 from vnma.core.package_config import PackageConfig
 from vnma.pypi.cache import WheelCache
@@ -93,6 +94,7 @@ def cmd_generate(args: argparse.Namespace, context: ProjectContext) -> int:
     return 0
 
 
+@atomic_workspace_command
 def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
     """Install a package or restore all dependencies resolving transitive DAG constraints."""
     context.ensure_directories()
@@ -450,6 +452,7 @@ def _restore_from_lock(
         manifest.packages[norm_name] = record
 
 
+@atomic_workspace_command
 def cmd_update(args: argparse.Namespace, context: ProjectContext) -> int:
     """Update dependencies to latest compatible versions ignoring user-pinned packages."""
     context.ensure_directories()
@@ -548,6 +551,17 @@ def cmd_update(args: argparse.Namespace, context: ProjectContext) -> int:
 
 
 def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Uninstall a package transactionally; full project purge remains explicit."""
+    if getattr(args, "package", None) and not getattr(args, "all", False):
+        with WorkspaceTransaction(context) as txn:
+            status = _cmd_uninstall(args, context)
+            if status != 0:
+                txn.abort()
+            return status
+    return _cmd_uninstall(args, context)
+
+
+def _cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
     """Uninstall a package or completely purge VNMA support from the project directory."""
     raw_target = getattr(args, "package", None)
     purge_all = getattr(args, "all", False)
@@ -603,6 +617,7 @@ def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
 
 
 
+@atomic_workspace_command
 def cmd_prune(args: argparse.Namespace, context: ProjectContext) -> int:
     """Identify and remove orphaned packages not reachable from project dependencies."""
     pruner = OrphanPruner(context)
@@ -691,6 +706,7 @@ def cmd_run(args: argparse.Namespace, context: ProjectContext) -> int:
     return runner.run_script(script_path, extra_args)
 
 
+@atomic_workspace_command
 def cmd_link(args: argparse.Namespace, context: ProjectContext) -> int:
     """Link a local directory in zero-copy live development mode."""
     context.ensure_directories()
@@ -722,6 +738,7 @@ def cmd_link(args: argparse.Namespace, context: ProjectContext) -> int:
     return 0
 
 
+@atomic_workspace_command
 def cmd_unlink(args: argparse.Namespace, context: ProjectContext) -> int:
     """Remove a linked local package and restore standard configuration."""
     manager = LinkManager(context)
@@ -735,6 +752,7 @@ def cmd_unlink(args: argparse.Namespace, context: ProjectContext) -> int:
     return 0
 
 
+@atomic_workspace_command
 def cmd_reload(args: argparse.Namespace, context: ProjectContext) -> int:
     """Verify links, reconcile transitive dependencies, and automatically prune orphans."""
     context.ensure_directories()
