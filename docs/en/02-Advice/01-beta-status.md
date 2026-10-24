@@ -1,6 +1,6 @@
 # Beta Status & Stability Considerations
 
-`vnma` is currently in **Beta (v0.3.0)**. This document provides an objective summary of tested environments, stability expectations, and recommended deployment practices.
+`vnma` is currently in **Beta (v0.3.1)**. This document provides an objective summary of tested environments, stability expectations, and recommended deployment practices.
 
 ---
 

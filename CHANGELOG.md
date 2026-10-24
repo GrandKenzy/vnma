@@ -3,6 +3,22 @@
 All notable changes to VNMA are documented here. This project follows the
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.1] — 2026-10-24
+
+### Resumen de la versión
+
+Esta versión corrige la eliminación accidental del archivo de configuración al desinstalar, añade el nuevo comando `vnma test` para ejecución y descubrimiento automático de pruebas en el entorno vendoreado, e introduce la nueva identidad visual y banner oficial del proyecto.
+
+**Estado de publicación:** versión **0.3.1** publicada en PyPI ([https://pypi.org/project/vnma/0.3.1/](https://pypi.org/project/vnma/0.3.1/)) y código integrado en `main`.
+
+### Added
+- **Comando `vnma test`:** Descubre automáticamente directorios de pruebas (`tests/`, `test/`, `testing/`) y ejecuta `pytest` dentro del entorno de dependencias vendoreadas, con fallback automático a `unittest discover` de la librería estándar si pytest no está instalado.
+- **Identidad visual:** Añadido banner oficial y logotipo en formato vectorial SVG y raster HD (`assets/banner.*`, `assets/logo.*`) y modernizado el `README.md`.
+- **Flag `--purge-config`:** Permite eliminar explícitamente `vnma.toml` durante un `vnma uninstall` completo sólo cuando el usuario lo solicite de manera intencional.
+
+### Fixed
+- **Preservación de `vnma.toml`:** `vnma uninstall` (y `vnma uninstall -y`) ahora preserva `vnma.toml` por defecto (`keep_config=True`), limpiando el directorio `vendor/` y el lockfile sin destruir la definición de dependencias del proyecto.
+
 ## [0.3.0] — 2026-10-24
 
 ### Resumen de la versión
