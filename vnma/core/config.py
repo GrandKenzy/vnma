@@ -24,6 +24,7 @@ class VnmaConfig:
         default_factory=lambda: ["vscode", "pycharm"]
     )
     package_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    base_dir: Path | None = None  # Internal config location, not serialized
 
     def get_all_specs(self, include_dev: bool = False) -> list[PackageSpec]:
         """Convert declared dependency definitions into PackageSpec instances."""
@@ -38,7 +39,7 @@ class VnmaConfig:
                     specs.append(
                         PackageSpec(
                             name=norm_name,
-                            path=PortablePathResolver.expand(value["path"]),
+                            path=PortablePathResolver.expand(value["path"], base_dir=self.base_dir),
                             editable=bool(value.get("editable", False)),
                         )
                     )
@@ -66,7 +67,9 @@ class ConfigHandler:
         if config_path.exists():
             with config_path.open("rb") as f:
                 data = tomllib.load(f)
-            return ConfigHandler._parse_vnma_data(data)
+            config = ConfigHandler._parse_vnma_data(data)
+            config.base_dir = config_path.parent.resolve()
+            return config
 
         if pyproject_path and pyproject_path.exists():
             with pyproject_path.open("rb") as f:
@@ -85,6 +88,7 @@ class ConfigHandler:
                 dev_dependencies=tool_data.get("dev-dependencies", {}),
                 vendor_dir=tool_data.get("vendor_dir", "vendor"),
                 ide_integration=tool_data.get("ide_integration", ["vscode", "pycharm"]),
+                base_dir=pyproject_path.parent.resolve(),
             )
 
         return VnmaConfig()
