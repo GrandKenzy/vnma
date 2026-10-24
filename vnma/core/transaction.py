@@ -149,12 +149,20 @@ class WorkspaceTransaction:
             self.existed = self.target.exists()
             if self.existed and not self.target.is_dir():
                 raise ValueError(f"Vendor path is not a directory: {self.target}")
+            sidecars = list(self.SIDE_CARS)
+            # Existing PyCharm module descriptors are also edited after
+            # commit; preserve their exact contents for failed promotions.
+            sidecars.extend(
+                path.relative_to(self.root).as_posix()
+                for path in (self.root / ".idea").glob("*.iml")
+                if path.is_file()
+            )
             self.snapshots = {
                 name: (
                     base64.b64encode((self.root / name).read_bytes()).decode("ascii")
                     if (self.root / name).is_file() else None
                 )
-                for name in self.SIDE_CARS
+                for name in sidecars
             }
             self._journal("staging")
             if self.existed:
