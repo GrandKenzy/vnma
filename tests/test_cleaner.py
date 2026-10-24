@@ -130,6 +130,12 @@ class TestCliUninstallWorkspace(unittest.TestCase):
             self.assertEqual(ret, 0)
             self.assertFalse(vendor_dir.exists())
             self.assertFalse((base / "vnma.lock").exists())
+            self.assertTrue((base / "vnma.toml").is_file())
+
+            # Now verify explicit --purge-config removes vnma.toml
+            args_purge = parser.parse_args(["uninstall", "-y", "--purge-config"])
+            ret_purge = args_purge.handler(args_purge, context)
+            self.assertEqual(ret_purge, 0)
             self.assertFalse((base / "vnma.toml").exists())
 
 

@@ -7,6 +7,7 @@ import io
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -558,6 +559,84 @@ class TestDependencyResolverCommandWiring(unittest.TestCase):
                 code = args.handler(args, context)
                 self.assertEqual(code, 0)
                 resolvers.assert_called_once_with()
+
+
+
+
+class TestCliTestCommand(unittest.TestCase):
+    """Test vnma test command test discovery and runner invocation."""
+
+    def test_cli_test_discovers_tests_dir(self) -> None:
+        """Verify vnma test discovers 'tests' folder."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "tests").mkdir()
+            (root / "tests" / "test_sample.py").write_text(
+                "import unittest\nclass T(unittest.TestCase):\n    def test_ok(self): pass\n",
+                encoding="utf-8"
+            )
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0]
+                self.assertIn(call_args[0], ("pytest", "unittest"))
+
+    def test_cli_test_discovers_test_dir_when_tests_absent(self) -> None:
+        """Verify vnma test discovers 'test' folder when 'tests' does not exist."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "test").mkdir()
+            (root / "test" / "test_sample.py").write_text(
+                "import unittest\nclass T(unittest.TestCase):\n    def test_ok(self): pass\n",
+                encoding="utf-8"
+            )
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                mock_run.assert_called_once()
+
+    def test_cli_test_with_explicit_target_and_args(self) -> None:
+        """Verify vnma test forwards explicit file target and flags."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "test").mkdir()
+            test_file = root / "test" / "custom.py"
+            test_file.write_text("x = 1\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "test/custom.py", "-v"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                mock_run.assert_called_once()
+                runner_args = mock_run.call_args[0][1]
+                self.assertTrue(any("test/custom.py" in str(a) for a in runner_args))
+                self.assertIn("-v", runner_args)
+
+    def test_cli_test_no_test_directory_found(self) -> None:
+        """Verify vnma test returns error code 1 when no test directory exists."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test"])
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = args.handler(args, context)
+            self.assertEqual(code, 1)
+            self.assertIn("No test directory", buf.getvalue())
 
 
 if __name__ == "__main__":

@@ -116,6 +116,20 @@ class ScriptRunner:
         completed = subprocess.run(cmd, env=env, cwd=str(self._context.project_root))
         return completed.returncode
 
+    def run_module(
+        self,
+        module: str,
+        args: Sequence[str] = (),
+        env_overrides: dict[str, str] | None = None,
+    ) -> int:
+        """Execute a Python module (-m <module>) in the context of vendored dependencies."""
+        env = self._build_vendor_env()
+        if env_overrides:
+            env.update(env_overrides)
+        cmd = [sys.executable, "-m", module, *args]
+        completed = subprocess.run(cmd, env=env, cwd=str(self._context.project_root))
+        return completed.returncode
+
     def exec_binary(self, binary_name: str, args: Sequence[str] = ()) -> int:
         """Execute a CLI tool installed in the vendor .bin directory."""
         bin_dir = self._context.bin_path

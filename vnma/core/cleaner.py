@@ -19,7 +19,7 @@ class WorkspaceCleaner:
         """Initialize cleaner with project context."""
         self._context = context
 
-    def purge(self, keep_config: bool = False) -> list[str]:
+    def purge(self, keep_config: bool = True) -> list[str]:
         """Perform complete cleanup of VNMA vendor trees and support files in the project."""
         actions: list[str] = []
         actions.extend(self._clean_vendor_directories())
@@ -80,7 +80,7 @@ class WorkspaceCleaner:
             actions.append(f"Removed '{lock_path.name}'")
         return actions
 
-    def _clean_config(self, keep_config: bool = False) -> list[str]:
+    def _clean_config(self, keep_config: bool = True) -> list[str]:
         """Remove vnma.toml or strip [tool.vnma] table from pyproject.toml."""
         actions: list[str] = []
         if keep_config:

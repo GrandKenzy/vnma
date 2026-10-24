@@ -170,13 +170,28 @@ vnma prune --dry-run
 vnma prune --yes
 ```
 
-#### Uninstall a package:
+#### Run project tests:
 ```bash
-# Remove from vendor directory:
+# Automatically detects 'tests/' or 'test/' directory and runs with pytest (or unittest):
+vnma test
+
+# Run a specific test file or directory with custom flags:
+vnma test tests/test_feature.py -v
+```
+
+#### Uninstall packages or clean vendor:
+```bash
+# Remove package from vendor/ (retains declaration in vnma.toml):
 vnma uninstall requests
 
-# Remove from vendor directory AND delete from vnma.toml:
+# Remove from vendor/ AND remove from vnma.toml:
 vnma uninstall requests -d
+
+# Clean vendor/ and lockfiles (always preserves vnma.toml by default):
+vnma uninstall -y
+
+# Clean vendor/ and lockfiles AND remove vnma.toml:
+vnma uninstall -y --purge-config
 ```
 
 #### Restore dependencies on another machine or in CI:
@@ -234,13 +249,14 @@ entry_points = { my-tool = "my_library.cli:main" }
 | `vnma install <pkg>` | Install package(s) from PyPI, local path, or Git. |
 | `vnma install` | Restore all dependencies declared in `vnma.toml`. |
 | `vnma run <script>` | Run a Python script using the vendored runtime. |
+| `vnma test [target]` | Run project tests (auto-detects 'tests/' or 'test/') using pytest or unittest. |
 | `vnma link <path>` | Link a local library in development (zero-copy live edits). |
 | `vnma unlink <name>` | Unlink a previously linked local library. |
 | `vnma reload` | Verify links, update dependencies, and auto-prune obsolete packages. |
 | `vnma list` | Show all installed packages and their versions. |
 | `vnma update` | Update unpinned dependencies to their latest compatible versions. |
 | `vnma prune` | Remove unused packages that are no longer referenced in `vnma.toml`. |
-| `vnma uninstall <pkg>` | Remove a package from `vendor/` (add `-d` to remove from `vnma.toml`). |
+| `vnma uninstall [pkg]` | Remove a package or clean `vendor/` (preserves `vnma.toml` by default). |
 | `vnma sync-ide` | Reapply VS Code and PyCharm configuration files. |
 | `vnma clean` | Safely remove vendor folders and lockfiles. |
 

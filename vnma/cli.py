@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -573,9 +574,17 @@ def _cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
     purge_all = getattr(args, "all", False)
 
     if not raw_target or purge_all:
+        purge_config = getattr(args, "purge_config", False)
+        keep_config = not purge_config
+
         if not getattr(args, "yes", False) and sys.stdin.isatty():
+            prompt = (
+                "[vnma] Remove all VNMA vendors, lockfiles, and configuration files? [y/N]: "
+                if purge_config
+                else "[vnma] Remove all VNMA vendor directories and lockfiles (preserving vnma.toml)? [y/N]: "
+            )
             try:
-                choice = input("[vnma] Remove all VNMA vendors and project support files? [y/N]: ").strip().lower()
+                choice = input(prompt).strip().lower()
                 if choice not in ("y", "yes"):
                     print("[vnma] Uninstall cancelled by user.")
                     return 0
@@ -583,7 +592,6 @@ def _cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
                 print("\n[vnma] Operation aborted.")
                 return 1
 
-        keep_config = getattr(args, "keep_config", False)
         cleaner = WorkspaceCleaner(context)
         actions = cleaner.purge(keep_config=keep_config)
 
@@ -711,6 +719,87 @@ def cmd_run(args: argparse.Namespace, context: ProjectContext) -> int:
 
     runner = ScriptRunner(context)
     return runner.run_script(script_path, extra_args)
+
+
+def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Run project tests with pytest or unittest using the vendored environment."""
+    manager = LinkManager(context)
+    broken = manager.verify_links()
+    if broken:
+        print(manager.render_broken_links_alert(broken))
+        return 1
+
+    root = context.project_root
+    raw_target = getattr(args, "target", None)
+    raw_args = list(getattr(args, "args", []))
+
+    all_tokens = []
+    if raw_target:
+        all_tokens.append(raw_target)
+    all_tokens.extend(raw_args)
+
+    flags: list[str] = []
+    positionals: list[str] = []
+    for token in all_tokens:
+        if token.startswith("-"):
+            flags.append(token)
+        else:
+            positionals.append(token)
+
+    explicit_target = positionals[0] if positionals else None
+    remaining_positionals = positionals[1:] if positionals else []
+
+    discovered_target: str | None = None
+    if explicit_target:
+        discovered_target = explicit_target
+    else:
+        candidates = ["tests", "test", "testing"]
+        for cand in candidates:
+            cand_path = root / cand
+            if cand_path.is_dir():
+                discovered_target = cand
+                break
+
+    runner = ScriptRunner(context)
+    env = runner._build_vendor_env()
+    env["VNMA_HERMETIC"] = "0"
+
+    has_pytest = False
+    try:
+        check = subprocess.run(
+            [sys.executable, "-c", "import pytest"],
+            env=env,
+            cwd=str(root),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        has_pytest = (check.returncode == 0)
+    except Exception:
+        has_pytest = False
+
+    if has_pytest:
+        pytest_args = []
+        if discovered_target:
+            pytest_args.append(str(discovered_target))
+        pytest_args.extend(remaining_positionals)
+        pytest_args.extend(flags)
+        print("[vnma] Running tests with pytest in vendored environment...")
+        return runner.run_module("pytest", pytest_args, env_overrides={"VNMA_HERMETIC": "0"})
+    else:
+        if not discovered_target:
+            print("[vnma] No test directory specified and neither 'tests/' nor 'test/' was found in project.")
+            return 1
+
+        target_path = root / discovered_target
+        print("[vnma] Note: 'pytest' not found in vendor or Python environment.")
+        print("[vnma] Hint: Run 'vnma install pytest' for pytest features.")
+        print(f"[vnma] Running tests using standard library unittest in '{discovered_target}'...")
+
+        if target_path.is_file():
+            unittest_args = [*flags, str(discovered_target), *remaining_positionals]
+        else:
+            unittest_args = ["discover", "-s", str(discovered_target), *flags, *remaining_positionals]
+        return runner.run_module("unittest", unittest_args, env_overrides={"VNMA_HERMETIC": "0"})
 
 
 @atomic_workspace_command
@@ -957,9 +1046,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Purge all VNMA vendor directories, lockfiles, and workspace integrations",
     )
     uninstall_parser.add_argument(
+        "--purge-config",
+        action="store_true",
+        help="Also remove vnma.toml during a workspace uninstall (by default, vnma.toml is preserved)",
+    )
+    uninstall_parser.add_argument(
         "--keep-config",
         action="store_true",
-        help="Preserve vnma.toml when performing a workspace purge",
+        default=True,
+        help="Preserve vnma.toml when performing a workspace purge (default behavior)",
     )
     uninstall_parser.add_argument(
         "-y",
@@ -1030,13 +1125,31 @@ def build_parser() -> argparse.ArgumentParser:
     check_parser = subparsers.add_parser("check", help="Check vendor runtime compatibility")
     check_parser.set_defaults(handler=cmd_check)
 
+    test_parser = subparsers.add_parser(
+        "test",
+        help="Run project tests (searching for tests/ or test/) using pytest or unittest",
+    )
+    test_parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Optional test directory or file (defaults to 'tests' or 'test')",
+    )
+    test_parser.add_argument(
+        "args",
+        nargs=argparse.REMAINDER,
+        help="Additional arguments forwarded to pytest/unittest (e.g. -v, -k)",
+    )
+    test_parser.set_defaults(handler=cmd_test)
+
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI application entrypoint."""
     args_list = sys.argv[1:] if argv is None else list(argv)
-    if len(args_list) > 1 and args_list[0] == "run":
+    if len(args_list) > 1 and args_list[0] in ("run", "test"):
         if args_list[1].startswith("-") and args_list[1] not in ("-h", "--help"):
             args_list.insert(1, "--")
 
