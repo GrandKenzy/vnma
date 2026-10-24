@@ -60,6 +60,66 @@ class TestPackageConfig(unittest.TestCase):
             self.assertIsNone(loaded)
 
 
+    def test_gram_manifest_official_import_name_and_legacy_alias(self) -> None:
+        """Gram's historical packname remains supported; package is canonical."""
+        legacy = PackageConfig.from_dict({
+            "package": {
+                "name": "gram-framework2.0.0Beta",
+                "packname": "gram",
+                "version": "2.0.0b1",
+                "type": "pure-python",
+            },
+            "runtime": {"dll_directories": [], "hermetic": True},
+            "exports": {
+                "modules": ["gram"],
+                "entry_points": {"gram": "gram.__main__:main"},
+            },
+        })
+        self.assertEqual(legacy.name, "gram-framework2-0-0beta")
+        self.assertEqual(legacy.import_name, "gram")
+        self.assertEqual(legacy.modules, ["gram"])
+
+        canonical = PackageConfig.from_dict({
+            "package": {
+                "name": "gram-framework",
+                "package": "gram",
+                "packname": "old_gram",
+            },
+        })
+        self.assertEqual(canonical.name, "gram-framework")
+        self.assertEqual(canonical.import_name, "gram")
+
+        with self.assertRaises(ValueError):
+            PackageConfig.from_dict({
+                "package": {"name": "good-dist", "package": "invalid-name"},
+            })
+
+    def test_package_visible_name_in_install_manifest(self) -> None:
+        import zipfile
+        from vnma.core.context import ProjectContext
+        from vnma.wheel.installer import WheelInstaller
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "vnma.toml").write_text('[project]\nname = "app"\n', encoding="utf-8")
+            source = root / "source"
+            source.mkdir()
+            (source / "vnma_config.toml").write_text(
+                '[package]\nname = "gram-framework"\npackage = "gram"\nversion = "2.0.0b1"\n',
+                encoding="utf-8",
+            )
+            package = PackageConfig.load_from_dir(source)
+            wheel = root / "gram_framework-2.0.0b1-py3-none-any.whl"
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr("gram/__init__.py", "__all__ = []")
+            record = WheelInstaller(ProjectContext(start_path=root)).install(
+                wheel, "gram-framework", "2.0.0b1", package_config=package
+            )
+            self.assertEqual(record.name, "gram-framework")
+            self.assertEqual(record.import_name, "gram")
+
+
+
 class TestConfigHandler(unittest.TestCase):
     """Test project-level vnma.toml configuration parser and serializer."""
 
