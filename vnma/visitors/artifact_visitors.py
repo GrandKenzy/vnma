@@ -122,7 +122,6 @@ class ScriptWrapperVisitor(ArtifactVisitor):
         """Create shell and Windows batch launchers independent of vendor directory name."""
         self._bin_dir.mkdir(parents=True, exist_ok=True)
         py_exe = sys.executable
-        site_dir = self._vendor_dir / ".vnma_meta" / "site"
         module_part, _, attr_part = target.partition(":")
         attr_expr = f"getattr(mod, {attr_part!r})()" if attr_part else ""
 
@@ -133,17 +132,21 @@ class ScriptWrapperVisitor(ArtifactVisitor):
         )
 
         bat_file = self._bin_dir / f"{command_name}.cmd"
+        # Resolve vendor relative to launcher location, not to the staging
+        # path where VNMA initially created this script.
         bat_content = (
-            f"@echo off\r\n"
-            f'set "PYTHONPATH={site_dir};{self._vendor_dir};%PYTHONPATH%"\r\n'
+            "@echo off\r\n"
+            'set "VNMA_VENDOR=%~dp0..\\.."\r\n'
+            'set "PYTHONPATH=%VNMA_VENDOR%\\.vnma_meta\\site;%VNMA_VENDOR%;%PYTHONPATH%"\r\n'
             f'"{py_exe}" -c "{py_snippet}" %*\r\n'
         )
         bat_file.write_text(bat_content, encoding="utf-8")
 
         sh_file = self._bin_dir / command_name
         sh_content = (
-            f"#!/usr/bin/env sh\n"
-            f'export PYTHONPATH="{site_dir}:{self._vendor_dir}:$PYTHONPATH"\n'
+            "#!/usr/bin/env sh\n"
+            'VNMA_VENDOR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"\n'
+            'export PYTHONPATH="$VNMA_VENDOR/.vnma_meta/site:$VNMA_VENDOR:$PYTHONPATH"\n'
             f'exec "{py_exe}" -c "{py_snippet}" "$@"\n'
         )
         sh_file.write_text(sh_content, encoding="utf-8")
