@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -56,6 +57,10 @@ def cmd_generate(args: argparse.Namespace, context: ProjectContext) -> int:
     force = getattr(args, "force", False)
     is_package = getattr(args, "package", False)
     folder_name = context.project_root.name
+    # Distribution names can contain dashes and dots, but Python imports cannot.
+    import_name = re.sub(r"\W", "_", folder_name)
+    if not import_name or import_name[0].isdigit():
+        import_name = "_" + import_name
 
     if is_package:
         target_path = context.project_root / "vnma_config.toml"
@@ -66,6 +71,7 @@ def cmd_generate(args: argparse.Namespace, context: ProjectContext) -> int:
         content = (
             "[package]\n"
             f'name = "{folder_name}"\n'
+            f'package = "{import_name}"\n'
             'version = "1.0.0"\n'
             'type = "pure-python"\n\n'
             "[runtime]\n"
