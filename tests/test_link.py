@@ -333,10 +333,8 @@ class TestCliLinkCommands(unittest.TestCase):
                 "Path('result.txt').write_text(gram.GRAM_VALUE)\n",
                 encoding="utf-8",
             )
-            from unittest.mock import patch
-            # ScriptRunner launches a subprocess, so invoke from project root.
-            with patch("os.getcwd", return_value=str(easyc)):
-                self.assertTrue((gram_src / "gram" / "__init__.py").is_file())
+            self.assertEqual(ScriptRunner(context).run_script(script), 0)
+            self.assertEqual((easyc / "result.txt").read_text(), "works")
             bootstrap = (context.vendor_path / "__bootstrap__.py").read_text()
             self.assertIn("gram", bootstrap)
 
