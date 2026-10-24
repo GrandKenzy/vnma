@@ -105,6 +105,28 @@ class TestWorkspaceTransaction(unittest.TestCase):
             self.assertFalse(txn.journal.exists())
             self.assertFalse(txn.stage.exists())
 
+    def test_failed_commit_restores_previous_vendor_and_metadata(self) -> None:
+        """If editor synchronization fails after promotion, restore old vendor."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "vnma.toml").write_text('[project]\nname = "app"\n', encoding="utf-8")
+            context = ProjectContext(start_path=root)
+            old = make_wheel(root, "stable", "1.0", "stable", "VERSION = 1\n")
+            WheelInstaller(context).install(old, "stable", "1.0")
+            baseline = context.manifest_path.read_bytes()
+
+            new = make_wheel(root, "stable", "2.0", "stable", "VERSION = 2\n")
+            with patch.object(WheelInstaller, "_sync_environment", side_effect=OSError("injected")):
+                with self.assertRaises(OSError):
+                    WheelInstaller(context).install(new, "stable", "2.0")
+
+            self.assertEqual((root / "vendor/stable/__init__.py").read_text(), "VERSION = 1\n")
+            self.assertEqual(context.manifest_path.read_bytes(), baseline)
+            self.assertFalse(list(root.glob(".vnma-backup-*")))
+            self.assertFalse(list(root.glob(".vnma-stage-*")))
+
     def test_reject_external_vendor_without_changing_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
