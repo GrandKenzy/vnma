@@ -1,6 +1,6 @@
 # VNMA (Vendor Manager)
 
-> **Status:** Beta (v0.2.0)  
+> **Status:** Beta (v0.3.0)  
 > **Platform Support:** CPython 3.11+ (Tested on Windows and Linux)
 
 `vnma` is a dependency and vendoring manager for Python projects. It manages project dependencies inside a local, isolated vendor directory (`vendor/` or `vendor_vnma/`) instead of creating or replicating full Python virtual environments (`venv`).
