@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from vnma.core.config import ConfigHandler, VnmaConfig
 from vnma.core.context import ProjectContext
 from vnma.core.link_manager import LinkManager
 from vnma.core.lockfile import LockfileHandler
+from vnma.core.transaction import atomic_workspace_command, WorkspaceTransaction
 from vnma.core.models import PackageSpec, normalize_package_name
 from vnma.core.package_config import PackageConfig
 from vnma.pypi.cache import WheelCache
@@ -55,6 +57,10 @@ def cmd_generate(args: argparse.Namespace, context: ProjectContext) -> int:
     force = getattr(args, "force", False)
     is_package = getattr(args, "package", False)
     folder_name = context.project_root.name
+    # Distribution names can contain dashes and dots, but Python imports cannot.
+    import_name = re.sub(r"\W", "_", folder_name)
+    if not import_name or import_name[0].isdigit():
+        import_name = "_" + import_name
 
     if is_package:
         target_path = context.project_root / "vnma_config.toml"
@@ -65,6 +71,7 @@ def cmd_generate(args: argparse.Namespace, context: ProjectContext) -> int:
         content = (
             "[package]\n"
             f'name = "{folder_name}"\n'
+            f'package = "{import_name}"\n'
             'version = "1.0.0"\n'
             'type = "pure-python"\n\n'
             "[runtime]\n"
@@ -93,6 +100,7 @@ def cmd_generate(args: argparse.Namespace, context: ProjectContext) -> int:
     return 0
 
 
+@atomic_workspace_command
 def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
     """Install a package or restore all dependencies resolving transitive DAG constraints."""
     context.ensure_directories()
@@ -450,6 +458,7 @@ def _restore_from_lock(
         manifest.packages[norm_name] = record
 
 
+@atomic_workspace_command
 def cmd_update(args: argparse.Namespace, context: ProjectContext) -> int:
     """Update dependencies to latest compatible versions ignoring user-pinned packages."""
     context.ensure_directories()
@@ -548,6 +557,17 @@ def cmd_update(args: argparse.Namespace, context: ProjectContext) -> int:
 
 
 def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Uninstall a package transactionally; full project purge remains explicit."""
+    if getattr(args, "package", None) and not getattr(args, "all", False):
+        with WorkspaceTransaction(context) as txn:
+            status = _cmd_uninstall(args, context)
+            if status != 0:
+                txn.abort()
+            return status
+    return _cmd_uninstall(args, context)
+
+
+def _cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
     """Uninstall a package or completely purge VNMA support from the project directory."""
     raw_target = getattr(args, "package", None)
     purge_all = getattr(args, "all", False)
@@ -603,6 +623,7 @@ def cmd_uninstall(args: argparse.Namespace, context: ProjectContext) -> int:
 
 
 
+@atomic_workspace_command
 def cmd_prune(args: argparse.Namespace, context: ProjectContext) -> int:
     """Identify and remove orphaned packages not reachable from project dependencies."""
     pruner = OrphanPruner(context)
@@ -644,11 +665,12 @@ def cmd_list(args: argparse.Namespace, context: ProjectContext) -> int:
         return 0
 
     print(f"[vnma] Packages installed in '{context.vendor_name}':")
-    print(f"{'Package':<25} {'Version':<15} {'Native':<10}")
-    print("-" * 52)
+    print(f"{'Import':<22} {'Distribution':<27} {'Version':<15} {'Native':<8}")
+    print("-" * 74)
     for name, record in sorted(manifest.packages.items()):
         native_flag = "Yes" if record.has_native_binaries else "No"
-        print(f"{name:<25} {record.version:<15} {native_flag:<10}")
+        visible_name = record.import_name or name
+        print(f"{visible_name:<22} {name:<27} {record.version:<15} {native_flag:<8}")
 
     return 0
 
@@ -691,6 +713,7 @@ def cmd_run(args: argparse.Namespace, context: ProjectContext) -> int:
     return runner.run_script(script_path, extra_args)
 
 
+@atomic_workspace_command
 def cmd_link(args: argparse.Namespace, context: ProjectContext) -> int:
     """Link a local directory in zero-copy live development mode."""
     context.ensure_directories()
@@ -709,7 +732,7 @@ def cmd_link(args: argparse.Namespace, context: ProjectContext) -> int:
         print(f"[vnma] Resolving {len(deps)} declared dependency/dependencies for '{linked_spec.name}'...")
         cache = WheelCache()
         installer = WheelInstaller(context)
-        resolver = WheelResolver(cache, LocalWheelIndex())
+        resolver = WheelResolver()
         try:
             resolved = resolver.resolve_graph(deps)
         except (DependencyConflictError, ValueError) as err:
@@ -722,6 +745,7 @@ def cmd_link(args: argparse.Namespace, context: ProjectContext) -> int:
     return 0
 
 
+@atomic_workspace_command
 def cmd_unlink(args: argparse.Namespace, context: ProjectContext) -> int:
     """Remove a linked local package and restore standard configuration."""
     manager = LinkManager(context)
@@ -735,6 +759,7 @@ def cmd_unlink(args: argparse.Namespace, context: ProjectContext) -> int:
     return 0
 
 
+@atomic_workspace_command
 def cmd_reload(args: argparse.Namespace, context: ProjectContext) -> int:
     """Verify links, reconcile transitive dependencies, and automatically prune orphans."""
     context.ensure_directories()
@@ -758,7 +783,7 @@ def cmd_reload(args: argparse.Namespace, context: ProjectContext) -> int:
 
     cache = WheelCache()
     installer = WheelInstaller(context)
-    resolver = WheelResolver(cache, LocalWheelIndex())
+    resolver = WheelResolver()
 
     if pypi_specs:
         try:

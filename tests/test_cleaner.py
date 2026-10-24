@@ -65,6 +65,7 @@ class TestWorkspaceCleaner(unittest.TestCase):
 
             vendor_dir = base / "vendor"
             vendor_dir.mkdir(parents=True, exist_ok=True)
+            (vendor_dir / ".vnma_meta").mkdir()
             (vendor_dir / "dep.py").write_text("a = 1\n", encoding="utf-8")
 
             (base / "vnma.lock").write_text('{"packages": {}}\n', encoding="utf-8")
@@ -116,6 +117,7 @@ class TestCliUninstallWorkspace(unittest.TestCase):
             base = Path(tmp_dir)
             vendor_dir = base / "vendor"
             vendor_dir.mkdir(parents=True, exist_ok=True)
+            (vendor_dir / ".vnma_meta").mkdir()
             (vendor_dir / "mod.py").write_text("x = 1\n", encoding="utf-8")
             (base / "vnma.lock").write_text("{}", encoding="utf-8")
             (base / "vnma.toml").write_text('[project]\nname = "test"\n', encoding="utf-8")
@@ -129,6 +131,49 @@ class TestCliUninstallWorkspace(unittest.TestCase):
             self.assertFalse(vendor_dir.exists())
             self.assertFalse((base / "vnma.lock").exists())
             self.assertFalse((base / "vnma.toml").exists())
+
+
+    def test_purge_preserves_unmanaged_vendor_and_removes_managed_fallback(self) -> None:
+        """An unrelated vendor directory must survive when VNMA owns vendor_vnma."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            original = root / "vendor"
+            original.mkdir()
+            keep = original / "important.txt"
+            keep.write_text("preserve me", encoding="utf-8")
+
+            owned = root / "vendor_vnma"
+            (owned / ".vnma_meta").mkdir(parents=True)
+            (owned / "package.py").write_text("x = 1", encoding="utf-8")
+
+            (root / "vnma.toml").write_text('[project]\nname = "app"\n', encoding="utf-8")
+            ctx = ProjectContext(start_path=root)
+            self.assertEqual(ctx.vendor_name, "vendor_vnma")
+
+            WorkspaceCleaner(ctx).purge()
+            self.assertTrue(keep.is_file())
+            self.assertEqual(keep.read_text(encoding="utf-8"), "preserve me")
+            self.assertFalse(owned.exists())
+
+    def test_purge_rejects_vendor_path_outside_workspace(self) -> None:
+        """Even a marker cannot authorize removing a folder outside project root."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            project = base / "app"
+            project.mkdir()
+            external = base / "other"
+            (external / ".vnma_meta").mkdir(parents=True)
+            important = external / "important.txt"
+            important.write_text("must survive", encoding="utf-8")
+            (project / "vnma.toml").write_text(
+                '[project]\nname = "app"\n\n[tool.vnma]\nvendor_dir = "../other"\n',
+                encoding="utf-8",
+            )
+
+            ctx = ProjectContext(start_path=project)
+            actions = WorkspaceCleaner(ctx).purge()
+            self.assertTrue(important.is_file())
+            self.assertTrue(any("Skipped unsafe" in action for action in actions))
 
 
 if __name__ == "__main__":

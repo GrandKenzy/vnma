@@ -38,6 +38,16 @@ class WheelInstaller:
         active_extras: Sequence[str] = (),
     ) -> InstalledPackageRecord:
         """Extract wheel, run artifact analysis visitors, and update manifests."""
+        # Direct API calls are atomic too; when CLI already owns a workspace
+        # transaction, reuse the same staging tree for the complete graph.
+        if not getattr(self._context, "_transaction_active", False):
+            from vnma.core.transaction import WorkspaceTransaction
+            with WorkspaceTransaction(self._context):
+                return self.install(
+                    wheel_path, package_name, version,
+                    package_config=package_config,
+                    active_extras=active_extras,
+                )
         self._context.ensure_directories()
         norm_name = normalize_package_name(package_name)
 
@@ -108,6 +118,20 @@ class WheelInstaller:
                     },
                 })
 
+        if package_config and package_config.import_name:
+            import_path = package_config.import_name.replace(".", "/")
+            installed_paths = {item.relative_path.replace("\\", "/") for item in record_visitor.installed_files}
+            if not any(
+                item == import_path + ".py"
+                or item.startswith(import_path + "/")
+                or item.startswith(import_path + ".")
+                for item in installed_paths
+            ):
+                raise ValueError(
+                    f"Declared import package '{package_config.import_name}' "
+                    f"is missing from wheel '{wheel_path.name}'"
+                )
+
         dll_dirs = (
             package_config.dll_directories
             if package_config and package_config.dll_directories
@@ -129,6 +153,7 @@ class WheelInstaller:
         package_record = InstalledPackageRecord(
             name=norm_name,
             version=version,
+            import_name=package_config.import_name if package_config else '',
             files=record_visitor.installed_files,
             dll_directories=dll_dirs,
             entry_points=merged_entry_points,
@@ -143,8 +168,9 @@ class WheelInstaller:
         self._update_manifest(package_record)
         self._record_python_version()
         self._sync_bootstrap()
-        self._sync_environment()
-
+        # Never leak .vnma-stage- paths into editor configuration.
+        if not getattr(self._context, "_transaction_active", False):
+            self._sync_environment()
 
         return package_record
 

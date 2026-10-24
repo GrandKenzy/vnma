@@ -92,5 +92,42 @@ class TestWheelArchiveExtraction(unittest.TestCase):
             self.assertEqual(extracted_file.read_bytes(), file_bytes)
 
 
+    def test_reject_internal_paths_after_pep427_mapping(self) -> None:
+        """A wheel cannot disguise an internal path inside .data/purelib."""
+        for path in (
+            ".vnma_meta/manifest.json",
+            "pkg-1.0.data/purelib/.vnma_meta/manifest.json",
+            "pkg-1.0.data/platlib/__bootstrap__.py",
+            "__bootstrap__.py",
+        ):
+            with self.subTest(path=path), self.assertRaises(SecurityError):
+                WheelArchive._normalize_wheel_member_path(path)
+
+    def test_reject_late_invalid_member_before_extracting_first_file(self) -> None:
+        """Preflight prevents writing earlier members when a later member is unsafe."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            wheel_path = root / "malicious-1.0.0-py3-none-any.whl"
+            dest = root / "vendor"
+            with zipfile.ZipFile(wheel_path, "w") as archive:
+                archive.writestr("safe_package/module.py", "safe = True")
+                archive.writestr("foo-1.0.data/purelib/.vnma_meta/manifest.json", "{}")
+
+            with self.assertRaises(SecurityError):
+                WheelArchive(wheel_path).extract_and_visit(dest, [])
+            self.assertFalse((dest / "safe_package" / "module.py").exists())
+
+    def test_reject_colliding_wheel_destinations(self) -> None:
+        """Two archive members cannot map to the same installed filename."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            wheel_path = root / "collision-1.0.0-py3-none-any.whl"
+            with zipfile.ZipFile(wheel_path, "w") as archive:
+                archive.writestr("my_pkg/mod.py", "one")
+                archive.writestr("collision-1.0.data/purelib/my_pkg/mod.py", "two")
+            with self.assertRaises(SecurityError):
+                WheelArchive(wheel_path).extract_and_visit(root / "vendor", [])
+
+
 if __name__ == "__main__":
     unittest.main()

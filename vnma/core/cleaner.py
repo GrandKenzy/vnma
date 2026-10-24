@@ -30,12 +30,17 @@ class WorkspaceCleaner:
         return actions
 
     def _clean_vendor_directories(self) -> list[str]:
-        """Remove vendor and vendor_vnma directories if present."""
+        """Remove only VNMA-owned vendor directories within the project root.
+
+        Never delete an unrelated vendor/ directory that caused VNMA to use
+        vendor_vnma/ instead, or a configured path outside the workspace.
+        """
         actions: list[str] = []
+        root = self._context.project_root.resolve()
         candidates = [
             self._context.vendor_path,
-            self._context.project_root / "vendor",
-            self._context.project_root / "vendor_vnma",
+            root / "vendor",
+            root / "vendor_vnma",
         ]
         visited: set[Path] = set()
 
@@ -45,9 +50,24 @@ class WorkspaceCleaner:
                 continue
             visited.add(resolved)
 
-            if cand.is_dir():
-                shutil.rmtree(cand, ignore_errors=True)
-                actions.append(f"Removed '{cand.name}/' directory")
+            if not cand.is_dir():
+                continue
+
+            if cand.is_symlink() or resolved == root or not resolved.is_relative_to(root):
+                actions.append(f"Skipped unsafe vendor directory '{cand}' (outside workspace or symlink)")
+                continue
+
+            # VNMA creates this marker when managing a vendor directory.
+            # A directory named 'vendor' alone is never enough to authorize deletion.
+            if not (resolved / ".vnma_meta").is_dir():
+                actions.append(f"Preserved unmanaged directory '{cand}'")
+                continue
+
+            try:
+                shutil.rmtree(cand)
+            except OSError as err:
+                raise RuntimeError(f"Could not remove VNMA vendor directory '{cand}': {err}") from err
+            actions.append(f"Removed '{cand.name}/' directory")
 
         return actions
 

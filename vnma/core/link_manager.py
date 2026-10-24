@@ -78,8 +78,15 @@ class LinkManager:
                 with vnma_cfg.open("rb") as f:
                     data = tomllib.load(f)
                 pkg_data = data.get("package", {})
-                if "name" in pkg_data:
-                    pkg_name = normalize_package_name(str(pkg_data["name"]))
+                # Editable links are addressed by the Python import identity,
+                # not by an unrelated distribution label (Gram -> import gram).
+                visible_name = (
+                    pkg_data.get("package")
+                    or pkg_data.get("packname")
+                    or pkg_data.get("name")
+                )
+                if visible_name:
+                    pkg_name = normalize_package_name(str(visible_name))
                 exports_data = data.get("exports", {})
                 declared_modules = exports_data.get("modules", [])
                 for mod in declared_modules:
@@ -210,7 +217,9 @@ class LinkManager:
         )
 
     def _sync_environment(self) -> None:
-        """Run IDE visitors to register extraPaths for live autocompletion."""
+        """Run IDE visitors only after a staged workspace is committed."""
+        if getattr(self._context, "_transaction_active", False):
+            return
         self._context.accept(GitignoreVisitor())
         self._context.accept(VSCodeConfigVisitor())
         self._context.accept(PyCharmConfigVisitor())

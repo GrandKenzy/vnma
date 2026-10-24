@@ -142,6 +142,7 @@ class InstalledPackageRecord:
 
     name: str
     version: str
+    import_name: str = ""
     files: list[InstalledFile] = field(default_factory=list)
     dll_directories: list[str] = field(default_factory=list)
     entry_points: dict[str, str] = field(default_factory=dict)
@@ -170,6 +171,7 @@ class InstalledPackageRecord:
         return cls(
             name=normalize_package_name(data["name"]),
             version=data["version"],
+            import_name=data.get("import_name", ""),
             files=files,
             dll_directories=data.get("dll_directories", []),
             entry_points=data.get("entry_points", {}),

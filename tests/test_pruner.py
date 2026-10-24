@@ -106,5 +106,49 @@ class TestOrphanPruner(unittest.TestCase):
             self.assertEqual(remaining_orphans, [])
 
 
+    def test_multiple_requested_extras_are_flattened_and_kept(self) -> None:
+        """An extra-qualified dependency remains reachable for any active extra."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            vendor = root / "vendor"
+            meta = vendor / ".vnma_meta"
+            meta.mkdir(parents=True)
+            (root / "vnma.toml").write_text('[project]\nname = "test"\n', encoding="utf-8")
+
+            dist = vendor / "parent_pkg-1.0.0.dist-info"
+            dist.mkdir()
+            (dist / "METADATA").write_text(
+                "Metadata-Version: 2.1\n"
+                "Name: parent-pkg\n"
+                "Version: 1.0.0\n"
+                "Requires-Dist: first-child>=1; extra == 'first'\n"
+                "Requires-Dist: second-child>=1; extra == 'second'\n",
+                encoding="utf-8",
+            )
+
+            parent = InstalledPackageRecord(
+                name="parent-pkg",
+                version="1.0.0",
+                files=[InstalledFile("parent_pkg-1.0.0.dist-info/METADATA", "", 0)],
+            )
+            manifest = VnmaManifest(
+                packages={
+                    "parent-pkg": parent,
+                    "first-child": InstalledPackageRecord(name="first-child", version="1.0.0"),
+                    "second-child": InstalledPackageRecord(name="second-child", version="1.0.0"),
+                },
+            )
+
+            pruner = OrphanPruner(ProjectContext(start_path=root))
+            reachable = pruner.compute_reachable_packages(
+                [PackageSpec.parse("parent-pkg[first,second]")],
+                manifest,
+            )
+            self.assertEqual(
+                reachable,
+                {"parent-pkg", "first-child", "second-child"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

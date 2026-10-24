@@ -21,6 +21,7 @@ class PackageConfig:
     entry_points: dict[str, str] = field(default_factory=dict)
     modules: list[str] = field(default_factory=list)
     hermetic: bool = True
+    import_name: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PackageConfig:
@@ -30,8 +31,14 @@ class PackageConfig:
         exports_data = data.get("exports", {})
 
         raw_name = pkg_data.get("name", "")
+        # `package` is the official import name; `packname` is the legacy
+        # field used by existing Gram manifests and remains supported.
+        import_name = str(pkg_data.get("package") or pkg_data.get("packname") or "")
+        if import_name and not all(part.isidentifier() for part in import_name.split(".")):
+            raise ValueError(f"Invalid importable Python package name: {import_name!r}")
         return cls(
             name=normalize_package_name(raw_name) if raw_name else "",
+            import_name=import_name,
             version=str(pkg_data.get("version", "")),
             package_type=pkg_data.get("type", "pure-python"),
             dll_directories=list(runtime_data.get("dll_directories", [])),

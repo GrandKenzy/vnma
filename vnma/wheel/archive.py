@@ -31,28 +31,41 @@ class WheelArchive:
 
     @staticmethod
     def _normalize_wheel_member_path(raw_filename: str) -> tuple[Path, bool]:
-        """Map PEP 427 .data directories and detect scripts safely."""
-        norm = raw_filename.replace("\\", "/").lstrip("/")
+        """Map wheel entries while protecting VNMA's own runtime metadata."""
+        norm = raw_filename.replace("\\", "/")
+        if norm.startswith("/"):
+            raise SecurityError(f"Absolute paths are not allowed in wheel entries: {raw_filename}")
         parts = norm.split("/")
-
-        if any(p in ("..", "") for p in parts if p == ".."):
+        if not norm or any(part in ("", ".", "..") for part in parts):
             raise SecurityError(f"Unsafe relative path segment in wheel entry: {raw_filename}")
-
-        if parts and parts[0] == ".vnma_meta":
-            raise SecurityError(
-                f"Access denied: wheel cannot target internal VNMA metadata path: {raw_filename}"
-            )
+        if ":" in parts[0]:
+            raise SecurityError(f"Drive-qualified wheel entry is not allowed: {raw_filename}")
 
         is_script = False
         if len(parts) >= 3 and parts[0].endswith(".data"):
             category = parts[1].lower()
             remainder = Path(*parts[2:])
             if category in ("purelib", "platlib"):
-                return remainder, False
-            if category == "scripts":
-                return Path(".vnma_meta", ".scripts_raw") / remainder, True
+                rel_path = remainder
+            elif category == "scripts":
+                rel_path = Path(".vnma_meta", ".scripts_raw") / remainder
+                is_script = True
+            else:
+                rel_path = Path(*parts)
+        else:
+            rel_path = Path(*parts)
 
-        return Path(*parts), is_script
+        # Validate the *mapped* path, not just the original ZIP entry.
+        # Only a wheel's actual .data/scripts payload may enter .scripts_raw.
+        if rel_path.parts[0] == ".vnma_meta" and not is_script:
+            raise SecurityError(
+                f"Wheel cannot overwrite VNMA internal metadata: {raw_filename}"
+            )
+        if rel_path.as_posix() in ("__bootstrap__.py", "__init__.py"):
+            raise SecurityError(
+                f"Wheel cannot overwrite VNMA runtime entry points: {raw_filename}"
+            )
+        return rel_path, is_script
 
     def extract_and_visit(
         self,
@@ -65,6 +78,10 @@ class WheelArchive:
         dest_root.mkdir(parents=True, exist_ok=True)
 
         with zipfile.ZipFile(self._wheel_path, "r") as archive:
+            # Validate the entire archive before writing even a single file.
+            # This prevents late malicious members from leaving partial writes.
+            planned: list[tuple[zipfile.ZipInfo, Path, Path, bool]] = []
+            seen_targets: set[Path] = set()
             for info in archive.infolist():
                 if info.is_dir():
                     continue
@@ -80,7 +97,12 @@ class WheelArchive:
                     raise SecurityError(
                         f"Zip Slip path traversal blocked: {info.filename} -> {target_path}"
                     )
+                if target_path in seen_targets:
+                    raise SecurityError(f"Duplicate destination in wheel: {info.filename}")
+                seen_targets.add(target_path)
+                planned.append((info, rel_path, target_path, is_script))
 
+            for info, rel_path, target_path, is_script in planned:
                 target_path.parent.mkdir(parents=True, exist_ok=True)
 
                 hasher = hashlib.sha256()

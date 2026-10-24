@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from vnma.core.context import ProjectContext
-from vnma.visitors.artifact_visitors import BinaryDetectorVisitor
+from vnma.visitors.artifact_visitors import BinaryDetectorVisitor, ScriptWrapperVisitor
 from vnma.visitors.base import ArtifactElement
 from vnma.visitors.git_visitors import GitignoreVisitor
 from vnma.visitors.ide_visitors import VSCodeConfigVisitor, loads_jsonc
@@ -42,6 +42,20 @@ class TestArtifactVisitors(unittest.TestCase):
         detector.visit_artifact(artifact_dll)
         self.assertTrue(detector.has_binaries)
         self.assertEqual(detector.dll_directories, ["mypkg/libs"])
+
+    def test_cli_wrappers_do_not_embed_staging_paths(self) -> None:
+        """Generated wrappers locate vendor relative to their executable."""
+        with tempfile.TemporaryDirectory() as temp:
+            stage = Path(temp) / ".vnma-stage-abcd"
+            bin_dir = stage / ".vnma_meta" / ".bin"
+            scripts = ScriptWrapperVisitor(bin_dir, stage)
+            scripts._generate_executable_wrapper("gram", "gram.__main__:main")
+            sh = (bin_dir / "gram").read_text(encoding="utf-8")
+            cmd = (bin_dir / "gram.cmd").read_text(encoding="utf-8")
+            self.assertIn("VNMA_VENDOR", sh)
+            self.assertIn("VNMA_VENDOR", cmd)
+            self.assertNotIn(str(stage), sh)
+            self.assertNotIn(str(stage), cmd)
 
     def test_dll_collision_detection(self) -> None:
         """Verify collision is flagged when two packages extract different DLL versions."""
