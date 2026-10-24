@@ -91,11 +91,13 @@ The last PyPI version verified by the smoke test was `0.2.9`.
 
 ### Verification evidence
 
-- **103 unit tests passed in each of four matrix environments**:
+- **117 unit tests passed in each of four matrix environments**:
   Windows/Python 3.11, Windows/Python 3.13, Linux/Python 3.11,
   Linux/Python 3.13.
-- **6/6 jobs successful** in
-  [GitHub Actions run 40121475119](https://github.com/GrandKenzy/vnma/actions/runs/40121475119).
+- **7/7 jobs successful** in
+  [GitHub Actions run 40123711128](https://github.com/GrandKenzy/vnma/actions/runs/40123711128),
+  including a live Gram/EasyC integration job using their actual repository
+  manifests and an executable import test.
 - The branch built `vnma-0.3.0-py3-none-any.whl`, installed that built
   wheel outside the checkout directory, and verified its version and CLI.
 - The independent `pip install vnma` smoke test checks the **published**
