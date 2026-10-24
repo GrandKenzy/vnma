@@ -15,7 +15,7 @@ class PyPIClient:
 
     BASE_URL = "https://pypi.org/pypi"
 
-    def __init__(self, user_agent: str = "vnma/0.2.9") -> None:
+    def __init__(self, user_agent: str = "vnma/0.3.0") -> None:
         """Initialize client with customized user-agent headers."""
         self._user_agent = user_agent
 
