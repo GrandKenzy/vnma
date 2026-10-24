@@ -166,10 +166,14 @@ class WheelResolver:
         marker_str = marker_str.strip()
 
         if Marker is not None:
-            if "extra" in marker_str and not active_extras:
-                return False
-            env = {"extra": active_extras[0] if active_extras else ""}
-            return Marker(marker_str).evaluate(environment=env)
+            marker = Marker(marker_str)
+            # Extras are additive: any requested extra may activate a dependency.
+            # Evaluating with an empty extra also preserves regular base markers.
+            extras_to_check = active_extras or ("",)
+            return any(
+                marker.evaluate(environment={"extra": extra})
+                for extra in extras_to_check
+            )
 
         if "extra ==" in marker_str or "extra==" in marker_str:
             return False
