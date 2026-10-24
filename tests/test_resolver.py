@@ -231,6 +231,91 @@ class TestTransitiveGraphResolution(unittest.TestCase):
         self.assertNotIn("helper-new", resolved_names)
 
 
+
+class TestBacktrackingRegression(unittest.TestCase):
+    """Resolution must replace all constraints from rejected releases."""
+
+    @staticmethod
+    def _wheel(name: str, version: str) -> WheelRelease:
+        return WheelRelease(
+            filename=f"{name.replace('-', '_')}-{version}-py3-none-any.whl",
+            url=f"https://example.invalid/{name}/{version}",
+            sha256="abc",
+            version=version,
+            python_tag="py3",
+            abi_tag="none",
+            platform_tag="any",
+        )
+
+    def test_replaces_stale_constraints_for_same_transitive_package(self) -> None:
+        catalog = {
+            "app": {
+                "releases": [self._wheel("app", "1.0")],
+                "requires_dist": {"1.0": ["worker>=1"]},
+            },
+            "limiter": {
+                "releases": [self._wheel("limiter", "1.0")],
+                "requires_dist": {"1.0": ["worker<2"]},
+            },
+            "worker": {
+                "releases": [self._wheel("worker", "2.0"), self._wheel("worker", "1.0")],
+                "requires_dist": {
+                    "2.0": ["helper>=2"],
+                    "1.0": ["helper<2"],
+                },
+            },
+            "helper": {
+                "releases": [self._wheel("helper", "2.0"), self._wheel("helper", "1.0")],
+                "requires_dist": {"2.0": [], "1.0": []},
+            },
+        }
+        result = WheelResolver(client=MockPyPIClient(catalog)).resolve_graph(
+            [PackageSpec.parse("app"), PackageSpec.parse("limiter")]
+        )
+        versions = {spec.name: wheel.version for spec, wheel in result}
+        self.assertEqual(versions["worker"], "1.0")
+        self.assertEqual(versions["helper"], "1.0")
+
+    def test_can_backtrack_parent_version_and_remove_orphan(self) -> None:
+        catalog = {
+            "parent": {
+                "releases": [self._wheel("parent", "2.0"), self._wheel("parent", "1.0")],
+                "requires_dist": {
+                    "2.0": ["broken-only>=1"],
+                    "1.0": ["good-child>=1"],
+                },
+            },
+            "broken-only": {"releases": [], "requires_dist": {}},
+            "good-child": {
+                "releases": [self._wheel("good-child", "1.0")],
+                "requires_dist": {"1.0": []},
+            },
+        }
+        resolved = WheelResolver(client=MockPyPIClient(catalog)).resolve_graph(
+            [PackageSpec.parse("parent")]
+        )
+        versions = {spec.name: wheel.version for spec, wheel in resolved}
+        self.assertEqual(versions["parent"], "1.0")
+        self.assertIn("good-child", versions)
+        self.assertNotIn("broken-only", versions)
+
+    def test_cycle_finishes_without_infinite_queue(self) -> None:
+        catalog = {
+            "alpha": {
+                "releases": [self._wheel("alpha", "1.0")],
+                "requires_dist": {"1.0": ["beta==1.0"]},
+            },
+            "beta": {
+                "releases": [self._wheel("beta", "1.0")],
+                "requires_dist": {"1.0": ["alpha==1.0"]},
+            },
+        }
+        resolved = WheelResolver(client=MockPyPIClient(catalog)).resolve_graph(
+            [PackageSpec.parse("alpha")]
+        )
+        self.assertEqual({spec.name for spec, _ in resolved}, {"alpha", "beta"})
+
+
 if __name__ == "__main__":
     unittest.main()
 
