@@ -3,6 +3,7 @@ name: Publish VNMA to PyPI
 # Publish only when the release version or this workflow changes on main.
 # The publishing job uses PyPI Trusted Publishing (OIDC), not long-lived tokens.
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
