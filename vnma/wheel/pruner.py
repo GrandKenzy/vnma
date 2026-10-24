@@ -57,14 +57,13 @@ class OrphanPruner:
             except OSError:
                 continue
 
-            pkg_extras = tuple(
-                set(record.active_extras)
-                | set(
-                    spec.extras
-                    for spec in root_specs
-                    if normalize_package_name(spec.name) == pkg_name
-                )
-            )
+            root_extras = {
+                extra
+                for spec in root_specs
+                if normalize_package_name(spec.name) == pkg_name
+                for extra in spec.extras
+            }
+            pkg_extras = tuple(sorted(set(record.active_extras) | root_extras))
 
             for line in content.splitlines():
                 if not line.startswith("Requires-Dist:"):
