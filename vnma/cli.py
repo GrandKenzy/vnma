@@ -665,11 +665,12 @@ def cmd_list(args: argparse.Namespace, context: ProjectContext) -> int:
         return 0
 
     print(f"[vnma] Packages installed in '{context.vendor_name}':")
-    print(f"{'Package':<25} {'Version':<15} {'Native':<10}")
-    print("-" * 52)
+    print(f"{'Import':<22} {'Distribution':<27} {'Version':<15} {'Native':<8}")
+    print("-" * 74)
     for name, record in sorted(manifest.packages.items()):
         native_flag = "Yes" if record.has_native_binaries else "No"
-        print(f"{name:<25} {record.version:<15} {native_flag:<10}")
+        visible_name = record.import_name or name
+        print(f"{visible_name:<22} {name:<27} {record.version:<15} {native_flag:<8}")
 
     return 0
 
