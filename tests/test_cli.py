@@ -505,6 +505,61 @@ class TestCliGenerate(unittest.TestCase):
             self.assertIn('[exports]', content)
 
 
+
+class TestDependencyResolverCommandWiring(unittest.TestCase):
+    """Verify link and reload construct a usable resolver, not WheelCache as a client."""
+
+    def test_link_uses_default_pypi_client_for_required_dependencies(self) -> None:
+        from unittest.mock import patch
+        from vnma.core.models import PackageSpec
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "vnma.toml").write_text('[project]\nname = "test"\n', encoding="utf-8")
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["link", str(root / "linked")])
+
+            with (
+                patch("vnma.cli.LinkManager") as managers,
+                patch("vnma.cli.WheelResolver") as resolvers,
+                patch("vnma.cli.LockfileHandler.update"),
+            ):
+                managers.return_value.link.return_value = (
+                    PackageSpec(name="linked"),
+                    [PackageSpec.parse("example-dependency>=1")],
+                )
+                resolvers.return_value.resolve_graph.return_value = []
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                resolvers.assert_called_once_with()
+
+    def test_reload_uses_default_pypi_client_for_declared_dependencies(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "vnma.toml").write_text(
+                '[project]\nname = "test"\n\n[dependencies]\nexample-dependency = ">=1"\n',
+                encoding="utf-8",
+            )
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["reload"])
+
+            with (
+                patch("vnma.cli.LinkManager") as managers,
+                patch("vnma.cli.WheelResolver") as resolvers,
+                patch("vnma.cli.LockfileHandler.update"),
+            ):
+                managers.return_value.verify_links.return_value = []
+                managers.return_value.get_linked_specs.return_value = []
+                resolvers.return_value.resolve_graph.return_value = []
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                resolvers.assert_called_once_with()
+
+
 if __name__ == "__main__":
     unittest.main()
 
