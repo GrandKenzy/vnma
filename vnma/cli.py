@@ -709,7 +709,7 @@ def cmd_link(args: argparse.Namespace, context: ProjectContext) -> int:
         print(f"[vnma] Resolving {len(deps)} declared dependency/dependencies for '{linked_spec.name}'...")
         cache = WheelCache()
         installer = WheelInstaller(context)
-        resolver = WheelResolver(cache, LocalWheelIndex())
+        resolver = WheelResolver()
         try:
             resolved = resolver.resolve_graph(deps)
         except (DependencyConflictError, ValueError) as err:
@@ -758,7 +758,7 @@ def cmd_reload(args: argparse.Namespace, context: ProjectContext) -> int:
 
     cache = WheelCache()
     installer = WheelInstaller(context)
-    resolver = WheelResolver(cache, LocalWheelIndex())
+    resolver = WheelResolver()
 
     if pypi_specs:
         try:
