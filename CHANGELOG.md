@@ -3,11 +3,19 @@
 All notable changes to VNMA are documented here. This project follows the
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
-## [0.3.0] — In development (2026-10-24)
+## [0.3.0] — 2026-10-24
 
-**Status:** Changes are committed on the `actualizar-vnma` branch. This entry
-does **not** indicate a PyPI release or a merge into `main`.
-The last PyPI version verified by the smoke test was `0.2.9`.
+### Resumen de la versión
+
+Esta versión fortalece el resolvedor de dependencias, añade transacciones
+recuperables para instalaciones y actualizaciones, corrige operaciones peligrosas
+sobre archivos y formaliza la identidad importable de los paquetes Python.
+
+**Estado de publicación:** preparada para fusionarse con `main` y publicarse
+en PyPI. La publicación se considera completada únicamente tras verificar
+el registro de PyPI; crear el changelog o una versión Git no la sustituye.
+
+Esta versión mantiene el estado **Beta**.
 
 ### Added — Resolver backtracking and installation transactions
 
@@ -95,7 +103,7 @@ The last PyPI version verified by the smoke test was `0.2.9`.
   Windows/Python 3.11, Windows/Python 3.13, Linux/Python 3.11,
   Linux/Python 3.13.
 - **7/7 jobs successful** in
-  [GitHub Actions run 40123711128](https://github.com/GrandKenzy/vnma/actions/runs/40123711128),
+  [GitHub Actions run 40123819610](https://github.com/GrandKenzy/vnma/actions/runs/40123819610),
   including a live Gram/EasyC integration job using their actual repository
   manifests and an executable import test.
 - The branch built `vnma-0.3.0-py3-none-any.whl`, installed that built
@@ -126,7 +134,7 @@ The last PyPI version verified by the smoke test was `0.2.9`.
 - End-to-end native-binary installation across all OS/Python combinations
   and Python 3.14 are not covered by this CI matrix.
 
-## 0.2.9 — Previous published baseline
+## [0.2.9] — Versión anterior publicada
 
 This is the version that was published before the 0.3.0 development work.
 Historical changes prior to this branch were not reconstructed for this file.
