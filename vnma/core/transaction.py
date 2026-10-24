@@ -84,6 +84,15 @@ class WorkspaceTransaction:
         target = safe_path(data["target"])
         backup = safe_path(data["backup"])
         stage = safe_path(data["stage"])
+        if data.get("phase") == "committed":
+            # Once committed, restoring pre-transaction sidecars would make
+            # the new vendor tree disagree with its config and lockfile.
+            cls._remove_tree(backup)
+            cls._remove_tree(stage)
+            journal_path.unlink(missing_ok=True)
+            lock_path.unlink(missing_ok=True)
+            context.vendor_name = data["target"]
+            return
         if backup.exists():
             cls._remove_tree(target)
             backup.rename(target)
