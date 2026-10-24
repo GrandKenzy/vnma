@@ -11,9 +11,15 @@ Esta versión fortalece el resolvedor de dependencias, añade transacciones
 recuperables para instalaciones y actualizaciones, corrige operaciones peligrosas
 sobre archivos y formaliza la identidad importable de los paquetes Python.
 
-**Estado de publicación:** preparada para fusionarse con `main` y publicarse
-en PyPI. La publicación se considera completada únicamente tras verificar
-el registro de PyPI; crear el changelog o una versión Git no la sustituye.
+**Estado de publicación:** código integrado en `main` mediante el
+[PR #1](https://github.com/GrandKenzy/vnma/pull/1). La versión **0.3.0**
+aún no se ha publicado en PyPI: el
+[workflow de publicación](https://github.com/GrandKenzy/vnma/actions/runs/40124410800)
+compiló correctamente la distribución y superó las pruebas, pero PyPI
+respondió `invalid-publisher` al no encontrar un Trusted Publisher que
+corresponda al repositorio, workflow `publish.yml` y entorno `pypi`.
+La publicación debe verificarse en PyPI después de configurar la confianza
+y reejecutar el job fallido.
 
 Esta versión mantiene el estado **Beta**.
 
