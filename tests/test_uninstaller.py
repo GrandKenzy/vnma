@@ -77,5 +77,33 @@ class TestWheelUninstaller(unittest.TestCase):
             self.assertIn("package-b", updated_manifest.packages)
 
 
+    def test_uninstall_keeps_remaining_runtime_configuration(self) -> None:
+        """Do not reset non-hermetic policy or extra module roots on uninstall."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "vnma.toml").write_text('[project]\nname = "app"\n', encoding="utf-8")
+            context = ProjectContext(start_path=root)
+            context.ensure_directories()
+
+            manifest = VnmaManifest(packages={
+                "removed": InstalledPackageRecord(name="removed", version="1.0"),
+                "remaining": InstalledPackageRecord(
+                    name="remaining",
+                    version="1.0",
+                    hermetic=False,
+                    modules=["src"],
+                ),
+            })
+            context.manifest_path.write_text(
+                json.dumps(manifest.to_dict()),
+                encoding="utf-8",
+            )
+
+            self.assertTrue(WheelUninstaller(context).uninstall("removed"))
+            generated = context.bootstrap_path.read_text(encoding="utf-8")
+            self.assertIn("_HERMETIC_DEFAULT = False", generated)
+            self.assertIn("'src'", generated)
+
+
 if __name__ == "__main__":
     unittest.main()
