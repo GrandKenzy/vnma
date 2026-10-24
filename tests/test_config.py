@@ -170,7 +170,7 @@ class TestConfigHandler(unittest.TestCase):
             )
             ctx = ProjectContext(start_path=project_dir)
             self.assertEqual(ctx.vendor_name, "my_vendor_folder")
-            self.assertEqual(ctx.vendor_path, project_dir / "my_vendor_folder")
+            self.assertEqual(ctx.vendor_path.resolve(), (project_dir / "my_vendor_folder").resolve())
 
     def test_dev_dependencies_get_all_specs(self) -> None:
         """Verify get_all_specs honors include_dev flag."""
