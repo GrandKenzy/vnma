@@ -110,12 +110,12 @@ entry_points = {
 ### Gram and EasyC compatibility
 
 Gram's actual manifest uses a distribution name such as
-\`gram-framework2.0.0Beta\`, the legacy field \`packname = "gram"\`,
-\`[exports] modules = ["gram"]\` and an entry point for \`gram.__main__\`.
+`gram-framework2.0.0Beta`, the legacy field `packname = "gram"`,
+`[exports] modules = ["gram"]` and an entry point for `gram.__main__`.
 VNMA still accepts that unchanged. New manifests should express the same
 contract explicitly:
 
-\`\`\`toml
+```toml
 [package]
 name = "gram-framework2.0.0Beta"
 package = "gram"
@@ -131,20 +131,20 @@ modules = ["gram"]
 
 [exports.entry_points]
 gram = "gram.__main__:main"
-\`\`\`
+```
 
-\`name\` remains the dependency/distribution identity used in VNMA's
-manifest and resolution; \`package\` is the Python import identity,
+`name` remains the dependency/distribution identity used in VNMA's
+manifest and resolution; `package` is the Python import identity,
 validated against the installed wheel's modules. It is not a rename
-of \`gram\` to the distribution name.
+of `gram` to the distribution name.
 
-EasyC's \`vnma.toml.example\` remains supported without changes, including
-editable local dependencies (\`{ path = "...", editable = true }\`)
-and Git branch dependencies (\`{ git = "...", branch = "main" }\`).
+EasyC's `vnma.toml.example` remains supported without changes, including
+editable local dependencies (`{ path = "...", editable = true }`)
+and Git branch dependencies (`{ git = "...", branch = "main" }`).
 
 ### Atomic installation in 0.3.0
 
-\`vnma install\`, \`update\`, \`link\`, and \`reload\` stage their
+`vnma install`, `update`, `link`, and `reload` stage their
 vendor operations in a temporary sibling folder and publish the whole
 vendor tree only on success. Package removal and prune from the CLI
 also stage modifications. Failed commands restore the previous vendor,
@@ -155,7 +155,7 @@ generated CLI wrappers use relocation-safe paths.
 Limitations: whole-tree copy staging may require extra disk space
 (up to roughly another vendor tree), and on Windows the two renames
 are **recoverable but not one atomic directory-swap primitive**.
-The generic full-workspace \`uninstall --all\` purge remains an
+The generic full-workspace `uninstall --all` purge remains an
 explicit destructive operation, not a rollback transaction.
 
 ---
