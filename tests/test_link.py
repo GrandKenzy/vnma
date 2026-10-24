@@ -336,7 +336,7 @@ class TestCliLinkCommands(unittest.TestCase):
             self.assertEqual(ScriptRunner(context).run_script(script), 0)
             self.assertEqual((easyc / "result.txt").read_text(), "works")
             bootstrap = (context.vendor_path / "__bootstrap__.py").read_text()
-            self.assertIn(gram_src.resolve().as_posix(), bootstrap)
+            self.assertIn(PortablePathResolver.to_portable_string(gram_src.resolve()), bootstrap)
 
 
 if __name__ == "__main__":
