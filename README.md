@@ -37,11 +37,16 @@ Users are encouraged to verify builds in testing environments before deploying t
 
 ### Installation
 
-Install `vnma` directly from PyPI using `pip`:
+Install the latest **published** VNMA from PyPI using `pip`:
 
 ```bash
 pip install vnma
 ```
+
+> **Version note:** VNMA **0.3.0** is currently under development on
+> [`actualizar-vnma`](https://github.com/GrandKenzy/vnma/tree/actualizar-vnma).
+> The published PyPI package may still be **0.2.9**. To test this branch,
+> run `pip install "git+https://github.com/GrandKenzy/vnma.git@actualizar-vnma"`.
 
 Or for development:
 
@@ -103,7 +108,7 @@ vnma update --git
 
 ## Documentation
 
-Full documentation is available in the `docs/` directory:
+See the [CHANGELOG.md](CHANGELOG.md) for the verified 0.3.0 changes and remaining known issues.\n\nFull documentation is available in the `docs/` directory:
 
 * **Usage Guide:** [docs/en/01-Use/](docs/en/01-Use/)
   * [01. Getting Started](docs/en/01-Use/01-getting-started.md)
