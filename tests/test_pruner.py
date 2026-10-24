@@ -113,16 +113,16 @@ class TestOrphanPruner(unittest.TestCase):
             vendor = root / "vendor"
             meta = vendor / ".vnma_meta"
             meta.mkdir(parents=True)
-            (root / "vnma.toml").write_text('[project]\\nname = "test"\\n', encoding="utf-8")
+            (root / "vnma.toml").write_text('[project]\nname = "test"\n', encoding="utf-8")
 
             dist = vendor / "parent_pkg-1.0.0.dist-info"
             dist.mkdir()
             (dist / "METADATA").write_text(
-                "Metadata-Version: 2.1\\n"
-                "Name: parent-pkg\\n"
-                "Version: 1.0.0\\n"
-                "Requires-Dist: first-child>=1; extra == 'first'\\n"
-                "Requires-Dist: second-child>=1; extra == 'second'\\n",
+                "Metadata-Version: 2.1\n"
+                "Name: parent-pkg\n"
+                "Version: 1.0.0\n"
+                "Requires-Dist: first-child>=1; extra == 'first'\n"
+                "Requires-Dist: second-child>=1; extra == 'second'\n",
                 encoding="utf-8",
             )
 
