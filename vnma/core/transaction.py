@@ -42,6 +42,7 @@ class WorkspaceTransaction:
         self.existed = False
         self._active = False
         self._aborted = False
+        self._committed = False
 
     @staticmethod
     def _remove_tree(path: Path) -> None:
@@ -203,15 +204,20 @@ class WorkspaceTransaction:
                 from vnma.wheel.installer import WheelInstaller
                 WheelInstaller(self.context)._sync_environment()
                 self._journal("committed")
+                self._committed = True
                 self._remove_tree(self.backup)
         except BaseException:
-            self._rollback()
+            # A failure *after* durable commit must never restore a partially
+            # deleted backup. Keep the journal for cleanup at next invocation.
+            if not self._committed:
+                self._rollback()
             raise
         finally:
             self.context.vendor_name = self.original_vendor
             self.context._transaction_active = False
             self._remove_tree(self.stage)
-            self.journal.unlink(missing_ok=True)
+            if not self._committed or not self.backup.exists():
+                self.journal.unlink(missing_ok=True)
             self.lock.unlink(missing_ok=True)
             self._active = False
         return False
