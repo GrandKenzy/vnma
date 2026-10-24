@@ -15,13 +15,13 @@ class PackageConfig:
     """Explicit package metadata to override or bypass runtime heuristic discovery."""
 
     name: str
-    import_name: str = ""
     version: str = ""
     package_type: str = "pure-python"
     dll_directories: list[str] = field(default_factory=list)
     entry_points: dict[str, str] = field(default_factory=dict)
     modules: list[str] = field(default_factory=list)
     hermetic: bool = True
+    import_name: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PackageConfig:
