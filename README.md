@@ -1,3 +1,14 @@
+<p align="center">
+  <img src="assets/banner.png" alt="VNMA Banner" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/vnma/"><img src="https://img.shields.io/pypi/v/vnma.svg?color=blue&logo=pypi&logoColor=white" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/vnma/"><img src="https://img.shields.io/pypi/pyversions/vnma.svg?logo=python&logoColor=white" alt="Python Versions"></a>
+  <a href="https://github.com/GrandKenzy/vnma/actions/workflows/tests.yml"><img src="https://github.com/GrandKenzy/vnma/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause--Clear-orange.svg" alt="License"></a>
+</p>
+
 # VNMA (Vendor Manager)
 
 > **Status:** Beta (v0.3.0)  
