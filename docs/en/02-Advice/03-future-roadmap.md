@@ -1,38 +1,25 @@
 # Future Roadmap
 
-This document outlines planned capabilities and architectural enhancements under consideration for subsequent releases of `vnma`.
+This document outlines completed capabilities in recent releases and future architectural enhancements under consideration for `vnma`.
 
 ---
 
-## 1. Automated AST Shading (`--shaded`)
+## 1. Recently Implemented (v0.3.0)
 
-To address diamond dependency conflicts in pure-Python packages, a future release will introduce an AST-based shading transformation:
-* Re-writes `ast.Import` and `ast.ImportFrom` nodes to relocate conflicting packages under `_vnma_shaded/v1/<pkg>/`.
-* Updates internal `importlib.import_module` calls.
-* Excludes native binary modules where compiled entry points (`PyInit_*`) cannot be rewritten without recompilation.
-
----
-
-## 2. Orphan Pruning (`vnma prune`)
-
-A dedicated command to audit `vendor/` against `vnma.toml` and `vnma.lock`:
-* Identifies unmanaged packages or packages removed from project configuration.
-* Safely removes orphaned files while protecting shared files.
-* Prunes empty directory branches.
+* **Orphan Pruning (`vnma prune`):** Identifies and removes packages in `vendor/` that are no longer referenced by `vnma.toml` or active dependencies.
+* **Offline Mode (`--offline`):** Allows restoring dependencies strictly from local wheel caches without contacting external networks.
+* **Transactional Staging & Rollback:** Staging in isolated vendor folders with recovery journals to ensure failed installations never corrupt the project.
+* **Bounded Backtracking Resolver:** Evaluates transitive dependency graphs and breaks version conflicts cleanly.
 
 ---
 
-## 3. Strict Offline Mode (`--offline`)
+## 2. Planned & Under Consideration
 
-A flag forcing `vnma` to operate strictly from local caches (`~/.vnma/cache/wheels/` and `~/.vnma/cache/git/`):
-* Fails fast if any required wheel is absent from disk.
-* Ideal for air-gapped environments, secure enterprise builds, and rapid CI execution.
+### A. PEP 658 Metadata Streaming
+Download core wheel `.metadata` files directly from PyPI instead of downloading full `.whl` archives during dependency inspection, significantly accelerating initial dependency resolution on slow connections.
 
----
+### B. Isolated Type Stub Generation (`vnma stubs generate`)
+Generate `.pyi` type stub files for compiled C/C++ extensions (`.pyd` / `.so`) by introspecting them in an isolated subprocess, improving autocompletion and type checking in VS Code (Pylance) and PyCharm.
 
-## 4. Isolated Type Stub Generation (`vnma stubs generate`)
-
-To ensure type checkers and IDEs (Pylance, Pyright, Mypy) have full visibility into compiled C/C++ extensions:
-* Runs an isolated sub-process with `__bootstrap__` active.
-* Introspects native binary members (`.pyd` / `.so`).
-* Generates `.pyi` stub files alongside compiled artifacts without risking interpreter crashes in the main process.
+### C. Automated AST Shading (`--shaded`)
+For pure-Python libraries with unavoidable version conflicts in complex dependency trees, explore rewriting `ast.Import` and `ast.ImportFrom` nodes to relocate conflicting packages under isolated namespace prefixes.

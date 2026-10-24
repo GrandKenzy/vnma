@@ -40,9 +40,9 @@ During installation, `vnma`:
 To vendor an in-tree or sibling library:
 
 ```bash
-vnma install "C:/Users/Kentucky/Desktop/Gram"
-# or relative path:
 vnma install ./packages/my-internal-tool
+# or relative path:
+vnma install ../shared-library
 ```
 
 `vnma` builds the local source tree into an isolated wheel via PEP 517 before installation. If the local directory contains a `vnma_config.toml`, its explicit declarations are honored (see [Configuration Specifications](03-configuration-specs.md#2-package-level-configuration-vnma_configtoml)).
@@ -51,7 +51,7 @@ In `vnma.toml`, this is recorded as:
 
 ```toml
 [dependencies]
-gram-framework = { path = "C:/Users/Kentucky/Desktop/Gram" }
+my-internal-tool = { path = "./packages/my-internal-tool" }
 ```
 
 ---
@@ -231,11 +231,11 @@ When developing a library (such as an internal SDK or framework like `Gram`) alo
 ### A. Linking a Local Source Tree (`vnma link`)
 
 ```bash
-vnma link "~/Desktop/Gram"
-# or session-relative token:
-vnma link "%user%/Desktop/Gram"
+vnma link ../my-library
 # or relative path:
-vnma link ../Gram
+vnma link ./packages/my-internal-tool
+# or user-relative path:
+vnma link ~/projects/my-library
 ```
 
 1. **Zero-Copy & Session Portable**: Does not copy files into `vendor/`. Automatically serializes paths using user-independent tokens (`~/...`), ensuring the configuration works across different developers and user sessions without hardcoded usernames.
@@ -246,7 +246,7 @@ vnma link ../Gram
 In `vnma.toml`, it is stored portably as:
 ```toml
 [dependencies]
-gram = { path = "~/Desktop/Gram", editable = true }
+my-library = { path = "../my-library", editable = true }
 ```
 
 ---
@@ -257,10 +257,10 @@ To remove a linked package:
 
 ```bash
 # By package name:
-vnma unlink gram
+vnma unlink my-library
 
 # Or by directory path or portable token:
-vnma unlink "~/Desktop/Gram"
+vnma unlink ../my-library
 ```
 
 This removes the dependency from `vnma.toml`, clears its search path from `__bootstrap__.py`, and updates IDE configurations.

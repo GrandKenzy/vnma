@@ -44,9 +44,9 @@ import pygame
 
 ---
 
-## 3. Hermetic Path Sanitization ($\mathbf{P}_{\text{hermetic}}$)
+## 3. Runtime Path Isolation
 
-When `__bootstrap__.py` runs, it executes the hermetic projection operator:
+it isolates your application execution:
 
 1. It identifies standard library paths (`stdlib`, `platstdlib`, interpreter zip files).
 2. It identifies global package directories:
@@ -59,7 +59,7 @@ This prevents the common issue where code succeeds locally because a dependency 
 
 ---
 
-## 4. O(1) Dynamic Library Resolution (Windows DLLs)
+## 4. Windows Native DLL Registration
 
 On Windows with Python 3.8+, Python no longer searches the system `PATH` for DLLs required by compiled extensions (`.pyd`).
 

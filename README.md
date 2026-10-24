@@ -1,129 +1,265 @@
 # VNMA (Vendor Manager)
 
 > **Status:** Beta (v0.3.0)  
-> **Platform Support:** CPython 3.11+ (Tested on Windows and Linux)
+> **Platform Support:** CPython 3.11, 3.12, 3.13, 3.14 (Tested on Windows and Linux)
 
-`vnma` is a dependency and vendoring manager for Python projects. It manages project dependencies inside a local, isolated vendor directory (`vendor/` or `vendor_vnma/`) instead of creating or replicating full Python virtual environments (`venv`).
-
----
-
-## Overview
-
-Traditional Python development relies on virtual environments, which duplicate the interpreter executable and standard library layout. While effective for system isolation, virtual environments introduce overhead in container builds, portable deployments, and shared team workflows where only runtime libraries are required.
-
-`vnma` addresses this by downloading, building, and extracting platform-compatible wheels directly into the project directory while maintaining runtime path isolation and native binary compatibility.
-
-### Key Capabilities
-
-* **Hermetic Path Isolation:** Sanitizes `sys.path` during execution to prevent accidental leakage from system or user `site-packages`.
-* **Static O(1) Binary Resolution:** Avoids filesystem tree traversal at startup by recording precomputed dynamic link library (DLL/SO) paths during installation.
-* **Transitive DAG Resolution:** Evaluates version constraints across dependency trees, evaluating PEP 508 environment markers and detecting version conflicts.
-* **Explicit Configuration (`vnma_config.toml`):** Allows local packages and complex dependencies to specify exact DLL directories, entry points, and export boundaries without heuristic guesswork.
-* **Multi-Source Support:** Installs packages from PyPI, local filesystem paths (monorepos), and remote Git repositories.
-* **Reproducible Builds:** Emits a deterministic `vnma.lock` tracking versions, sources, and binary metadata.
-* **Automatic IDE Configuration:** Generates configuration for Visual Studio Code (`extraPaths`) and JetBrains PyCharm (`.idea` and `.env`).
+`vnma` is a dependency and vendoring manager for Python projects. It installs and manages dependencies inside a local project directory (`vendor/` or `vendor_vnma/`) instead of creating full Python virtual environments (`venv`).
 
 ---
 
-## Current Status: Beta Notice
+## What VNMA Does (and What It Doesn't)
 
-`vnma` is currently in **Beta**. While core workflows—such as installing native packages (`pygame-ce`), complex transitive graphs (`requests`), and local source trees—have been validated, edge cases exist across different platforms, compilers, and non-standard packaging layouts.
+### What it does:
+* **Installs packages locally:** Downloads, verifies, and unpacks wheels directly into `vendor/`.
+* **Runtime path isolation:** Cleans `sys.path` so your application loads third-party libraries strictly from `vendor/`, ignoring global or user `site-packages`.
+* **Automatic DLL registration (Windows):** Automatically calls `os.add_dll_directory()` for folders containing native binaries (e.g., SDL2, C extensions), preventing import errors.
+* **Transactional operations:** Installations and updates are staged in a private directory and committed atomically; if an install fails or crashes, previous state is restored via a recovery journal.
+* **Transitive dependency resolution:** Resolves dependencies and version constraints with bounded backtracking and PEP 508 marker evaluation.
+* **Live development links (`vnma link`):** Connects local libraries in development without copying files, keeping dependencies synchronized.
+* **IDE configuration:** Configures `extraPaths` in VS Code (`.vscode/settings.json`) and `PYTHONPATH` in PyCharm (`.env`, `.idea/*.iml`).
 
-Users are encouraged to verify builds in testing environments before deploying to critical production pipelines. See [docs/en/02-Advice/01-beta-status.md](docs/en/02-Advice/01-beta-status.md) for detailed considerations.
+### What it doesn't do:
+* **It does not virtualize the Python executable:** It uses your installed Python interpreter and standard library directly.
+* **It cannot load multiple incompatible versions of the same library simultaneously:** Python's runtime has a single global `sys.modules`. Conflicting version requirements are rejected at resolution time.
 
 ---
 
-## Quickstart
+## Step-by-Step Guide
 
-### Installation
+### Step 1: Install VNMA
 
-Install the latest **published** VNMA from PyPI using `pip`:
+Install `vnma` using `pip`:
 
 ```bash
 pip install vnma
 ```
 
-> **Version note:** VNMA **0.3.0** is currently under development on
-> [`actualizar-vnma`](https://github.com/GrandKenzy/vnma/tree/actualizar-vnma).
-> The published PyPI package may still be **0.2.9**. To test this branch,
-> run `pip install "git+https://github.com/GrandKenzy/vnma.git@actualizar-vnma"`.
-
-Or for development:
+Or install in editable mode from source:
 
 ```bash
+git clone https://github.com/GrandKenzy/vnma.git
+cd vnma
 pip install -e .
 ```
 
-### Basic Commands
+Verify the installation:
 
-Initialize a project:
 ```bash
+vnma --help
+```
+
+---
+
+### Step 2: Initialize Your Project
+
+Navigate to your project folder and run:
+
+```bash
+cd my_project
 vnma init
 ```
 
-Install a package from PyPI:
+This command creates:
+1. `vnma.toml`: Declarative manifest for your project and dependencies.
+2. `vendor/`: Directory for vendored packages.
+3. `vendor/__bootstrap__.py` & `vendor/__init__.py`: Runtime loader and path sanitizer.
+4. `.gitignore` entries: Ignores vendored packages in Git.
+5. IDE settings: Preconfigures VS Code (`.vscode/settings.json`) and PyCharm (`.env`).
+6. `vnma.lock`: Lockfile for reproducible installs.
+
+---
+
+### Step 3: Install Packages
+
+#### From PyPI:
 ```bash
+# Latest compatible version:
 vnma install requests
+
+# Pinned version:
+vnma install colorama==0.4.6
+
+# Multiple packages:
+vnma install flask pytest
 ```
 
-Install a package from a local directory:
+#### From a local directory:
 ```bash
-vnma install "C:/path/to/my-library"
+vnma install ../shared-library
 ```
 
-Execute a script using the vendored runtime:
+#### From a Git repository:
+```bash
+vnma install git+https://github.com/psf/requests.git@main
+```
+
+---
+
+### Step 4: Run Your Code
+
+You have two ways to execute your code with vendored packages:
+
+#### Option A: Using the CLI (Recommended)
 ```bash
 vnma run main.py
 ```
+`vnma run` sets `PYTHONPATH` to your vendor directory and disables user-site packages automatically.
 
-List installed packages:
+#### Option B: Direct Python execution
+Add this import at the very top of your entry script (`main.py`):
+```python
+import vendor.__bootstrap__
+import requests
+
+response = requests.get("https://httpbin.org/get")
+print(response.status_code)
+```
+Then run normally with your system Python:
+```bash
+python main.py
+```
+
+---
+
+### Step 5: Link Local Libraries for Development (`vnma link`)
+
+When actively developing an internal library alongside an app, avoid re-installing wheels after every change:
+
+```bash
+vnma link ../my-library
+```
+
+* **Zero-copy:** Does not copy files; imports live directly from the library's source directory.
+* **Auto-dependency resolution:** Reads the library's dependencies and installs them into `vendor/`.
+* **To unlink:**
+  ```bash
+  vnma unlink my-library
+  ```
+* **To check and synchronize linked libraries:**
+  ```bash
+  vnma reload
+  ```
+
+---
+
+### Step 6: Maintain and Clean Your Project
+
+#### List installed packages:
 ```bash
 vnma list
 ```
 
-Prune orphaned packages not declared in `vnma.toml`:
+#### Update dependencies:
 ```bash
+# Update all unpinned dependencies:
+vnma update
+
+# Update only PyPI packages:
+vnma update --pip
+
+# Update only Git repositories:
+vnma update --git
+```
+
+#### Remove orphaned packages (packages no longer required):
+```bash
+# Preview what would be removed:
 vnma prune --dry-run
+
+# Remove unused packages:
 vnma prune --yes
 ```
 
-Restore dependencies in offline mode:
+#### Uninstall a package:
 ```bash
-vnma install --offline
+# Remove from vendor directory:
+vnma uninstall requests
+
+# Remove from vendor directory AND delete from vnma.toml:
+vnma uninstall requests -d
 ```
 
-Update dependencies (ignoring pinned packages):
+#### Restore dependencies on another machine or in CI:
 ```bash
-# Update both PyPI and Git dependencies
-vnma update
-
-# Update only PyPI dependencies
-vnma update --pip
-
-# Update only Git repositories (pulls latest branch commit)
-vnma update --git
+vnma install
 ```
+
+---
+
+## Configuration Reference
+
+### `vnma.toml` (Project Level)
+
+```toml
+[project]
+name = "my-app"
+version = "1.0.0"
+
+[dependencies]
+requests = ">=2.31.0"
+colorama = "==0.4.6"
+local-tool = { path = "../local-tool" }
+
+[tool.vnma]
+vendor_dir = "vendor"
+ide_integration = ["vscode", "pycharm"]
+```
+
+### `vnma_config.toml` (Optional Library Manifest)
+
+If developing a library with native DLLs or specific exports, place a `vnma_config.toml` in its root:
+
+```toml
+[package]
+name = "my-library"
+package = "my_library"  # Python import name (import my_library)
+version = "0.1.0"
+
+[runtime]
+dll_directories = ["my_library/libs"]
+hermetic = true
+
+[exports]
+modules = ["my_library"]
+entry_points = { my-tool = "my_library.cli:main" }
+```
+
+---
+
+## Command Summary
+
+| Command | Description |
+| :--- | :--- |
+| `vnma init` | Initialize VNMA in the current project. |
+| `vnma install <pkg>` | Install package(s) from PyPI, local path, or Git. |
+| `vnma install` | Restore all dependencies declared in `vnma.toml`. |
+| `vnma run <script>` | Run a Python script using the vendored runtime. |
+| `vnma link <path>` | Link a local library in development (zero-copy live edits). |
+| `vnma unlink <name>` | Unlink a previously linked local library. |
+| `vnma reload` | Verify links, update dependencies, and auto-prune obsolete packages. |
+| `vnma list` | Show all installed packages and their versions. |
+| `vnma update` | Update unpinned dependencies to their latest compatible versions. |
+| `vnma prune` | Remove unused packages that are no longer referenced in `vnma.toml`. |
+| `vnma uninstall <pkg>` | Remove a package from `vendor/` (add `-d` to remove from `vnma.toml`). |
+| `vnma sync-ide` | Reapply VS Code and PyCharm configuration files. |
+| `vnma clean` | Safely remove vendor folders and lockfiles. |
 
 ---
 
 ## Documentation
 
-See the [CHANGELOG.md](CHANGELOG.md) for the verified 0.3.0 changes and remaining known issues.\n\nFull documentation is available in the `docs/` directory:
+Full documentation is available in the [`docs/`](docs/) directory:
 
-* **Usage Guide:** [docs/en/01-Use/](docs/en/01-Use/)
-  * [01. Getting Started](docs/en/01-Use/01-getting-started.md)
-  * [02. Dependency Management](docs/en/01-Use/02-dependency-management.md)
-  * [03. Configuration Specifications](docs/en/01-Use/03-configuration-specs.md)
-  * [04. Runtime Execution Model](docs/en/01-Use/04-runtime-execution.md)
-  * [05. IDE Integration](docs/en/01-Use/05-ide-integration.md)
-* **Design & Guidance:** [docs/en/02-Advice/](docs/en/02-Advice/)
-  * [01. Beta Status & Stability](docs/en/02-Advice/01-beta-status.md)
-  * [02. Known Limitations](docs/en/02-Advice/02-known-limitations.md)
-  * [03. Future Roadmap](docs/en/02-Advice/03-future-roadmap.md)
-  * [04. Community Vision](docs/en/02-Advice/04-community-vision.md)
+* **Getting Started:** [docs/en/01-Use/01-getting-started.md](docs/en/01-Use/01-getting-started.md)
+* **Dependency Management:** [docs/en/01-Use/02-dependency-management.md](docs/en/01-Use/02-dependency-management.md)
+* **Configuration Specifications:** [docs/en/01-Use/03-configuration-specs.md](docs/en/01-Use/03-configuration-specs.md)
+* **Runtime Execution Model:** [docs/en/01-Use/04-runtime-execution.md](docs/en/01-Use/04-runtime-execution.md)
+* **IDE Integration:** [docs/en/01-Use/05-ide-integration.md](docs/en/01-Use/05-ide-integration.md)
+* **Beta Status & Limitations:** [docs/en/02-Advice/01-beta-status.md](docs/en/02-Advice/01-beta-status.md)
+* **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
 ## License
 
-This software is released under a modified permissive license. Commercial resale of the tool itself is prohibited, and bundled distributions must retain reciprocal licensing. See [LICENSE](LICENSE) for terms.
+This software is released under a modified permissive license. See [LICENSE](LICENSE) for terms.

@@ -21,7 +21,7 @@ colorama = "==0.4.6"
 pygame-ce = ">=2.5.0, <2.6.0"
 
 # Local source directory dependency:
-gram-framework = { path = "C:/Users/Kentucky/Desktop/Gram" }
+gram-framework = { path = "./packages/my-internal-tool" }
 
 # Git repository dependency:
 custom-fork = { git = "https://github.com/user/fork.git", branch = "main" }
