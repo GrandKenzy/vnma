@@ -9,6 +9,41 @@ All notable changes to VNMA are documented here. This project follows the
 does **not** indicate a PyPI release or a merge into `main`.
 The last PyPI version verified by the smoke test was `0.2.9`.
 
+### Added — Resolver backtracking and installation transactions
+
+- Replaced the previous queue-only dependency resolver with deterministic,
+  bounded backtracking that **recomputes its complete constraint graph** from
+  the current version choices. Rejected package versions no longer leave
+  transitive constraints or dependencies in the final result.
+- Added regression coverage for conflicting diamonds, shared dependency
+  constraints, parent-version rollback, orphan elimination, and cycles.
+- Introduced `WorkspaceTransaction`: changes are staged in a private
+  vendor tree, multiple wheels are committed together, and a failed
+  installation/update can restore the previous vendor, configuration,
+  lockfile, and generated workspace settings.
+- Added an exclusive transaction lock and recovery journal to handle
+  interrupted commits and prevent parallel workspace mutations.
+  Windows uses recoverable directory renames, **not a single atomic
+  two-directory swap**.
+- Applied grouped transactions to CLI `install`, `update`, `link`,
+  `unlink`, `reload`, `prune` and targeted package removal.
+  Direct `WheelInstaller.install` calls are transactional as well.
+- Generated command wrappers now derive vendor paths from their own
+  executable location, so moving staged directories into place does not
+  leave broken paths.
+- Formalized `[package].package` as the **Python import name** (for
+  example `gram`) independently of the distribution identifier
+  `[package].name` (which may contain versions, dashes or other
+  normalized separators). The legacy `packname` alias used by
+  Gram remains accepted; installed records and `vnma list` expose
+  the importable name separately.
+- Editable package links prefer the import name and keep EasyC-style
+  `gram = { path = "...", editable = true }` dependency keys intact.
+  Relative paths in `vnma.toml` now resolve relative to the manifest,
+  not the caller's current working directory.
+- Documented Gram's current `vnma_config.toml` and EasyC's
+  `vnma.toml.example` as real compatibility references.
+
 ### Fixed
 
 - **Safe workspace cleanup:** `WorkspaceCleaner` no longer blindly removes
@@ -70,18 +105,22 @@ The last PyPI version verified by the smoke test was `0.2.9`.
 
 ### Known issues / not yet resolved
 
-- The graph resolver still accumulates constraints from replaced dependency
-  versions. More complex version backtracking can produce false conflicts.
-- ZIP path **preflight** prevents partial extraction for rejected archive
-  members, but extraction and manifest updates are **not yet transactional**.
-  An I/O failure mid-extraction may still leave files behind.
+- The resolver has bounded backtracking; large pathological graphs can
+  exhaust its decision limit. Performance tuning for unusually complex
+  dependency graphs is future work.
+- Transaction staging copies the vendor tree, requiring additional temporary
+  disk space. Whole-workspace `uninstall --all` is still an explicit
+  destructive purge, not a reversible vendor transaction.
+- Crash recovery uses a durable journal and directory renames. It does not
+  promise uninterrupted visibility of the live vendor during Windows
+  directory swaps or arbitrary power-loss durability on every filesystem.
 - `LockfileHandler.is_vendor_synchronized()` checks manifest records, not
   the presence and content hash of every installed file.
 - Git fallback checkout commands may fail without surfacing the failure,
   potentially installing a different ref from the one requested.
-- The cleanup guard protects *deletion*, but configured `vendor_dir` paths
-  should also be validated when initializing/installing to prevent writes
-  outside the workspace.
+- Transactional mutations reject vendor paths outside the project, but
+  nontransactional commands such as `vnma init` still need a uniform
+  workspace path-validation policy.
 - End-to-end native-binary installation across all OS/Python combinations
   and Python 3.14 are not covered by this CI matrix.
 
