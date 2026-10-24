@@ -210,7 +210,9 @@ class LinkManager:
         )
 
     def _sync_environment(self) -> None:
-        """Run IDE visitors to register extraPaths for live autocompletion."""
+        """Run IDE visitors only after a staged workspace is committed."""
+        if getattr(self._context, "_transaction_active", False):
+            return
         self._context.accept(GitignoreVisitor())
         self._context.accept(VSCodeConfigVisitor())
         self._context.accept(PyCharmConfigVisitor())
