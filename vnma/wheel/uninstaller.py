@@ -7,7 +7,6 @@ from pathlib import Path
 
 from vnma.core.context import ProjectContext
 from vnma.core.models import VnmaManifest, normalize_package_name
-from vnma.runtime.bootstrap import BootstrapGenerator
 
 
 class WheelUninstaller:
@@ -58,12 +57,11 @@ class WheelUninstaller:
         )
         tmp_path.replace(self._context.manifest_path)
 
-        all_dll_dirs: set[str] = set()
-        for pkg in manifest.packages.values():
-            all_dll_dirs.update(pkg.dll_directories)
+        # Use the same aggregation as installation: preserve hermetic policy,
+        # additional module paths, and editable links for remaining packages.
+        from vnma.wheel.installer import WheelInstaller
 
-        generator = BootstrapGenerator(self._context.vendor_path)
-        generator.generate(sorted(all_dll_dirs))
+        WheelInstaller(self._context)._sync_bootstrap()
 
         return True
 
