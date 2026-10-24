@@ -285,5 +285,61 @@ class TestCliLinkCommands(unittest.TestCase):
             self.assertFalse((vendor_dir / "unused_pkg").exists())
 
 
+    def test_easyc_editable_gram_uses_import_name_not_distribution_alias(self) -> None:
+        """EasyC-style gram key must not become a strange distribution-key duplicate."""
+        import json
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            gram_src = root / "Gram"
+            (gram_src / "gram").mkdir(parents=True)
+            (gram_src / "gram" / "__init__.py").write_text(
+                "GRAM_VALUE = 'works'\n", encoding="utf-8"
+            )
+            (gram_src / "vnma_config.toml").write_text(
+                '[package]\n'
+                'name = "gram-framework2.0.0Beta"\n'
+                'packname = "gram"\n'
+                'version = "2.0.0b1"\n'
+                'type = "pure-python"\n'
+                '[runtime]\ndll_directories = []\nhermetic = true\n'
+                '[exports]\nmodules = ["gram"]\n'
+                '[exports.entry_points]\ngram = "gram.__main__:main"\n',
+                encoding="utf-8",
+            )
+            easyc = root / "EasyC"
+            easyc.mkdir()
+            # Same source declaration as in EasyC's vnma.toml.example,
+            # activated for an isolated integration fixture.
+            (easyc / "vnma.toml").write_text(
+                '[project]\nname = "easyc"\n\n'
+                '[dependencies]\ngram = { path = "../Gram", editable = true }\n',
+                encoding="utf-8",
+            )
+            context = ProjectContext(start_path=easyc)
+            config = ConfigHandler.load(context.config_path)
+            self.assertEqual(len(config.get_all_specs()), 1)
+            parser = build_parser()
+            result = parser.parse_args(["install"]).handler(
+                parser.parse_args(["install"]), context
+            )
+            self.assertEqual(result, 0)
+            config_after = ConfigHandler.load(context.config_path)
+            self.assertEqual(set(config_after.dependencies), {"gram"})
+            self.assertTrue(config_after.dependencies["gram"]["editable"])
+            self.assertIn("gram", json.dumps(config_after.dependencies))
+            script = easyc / "main.py"
+            script.write_text(
+                "import gram\nfrom pathlib import Path\n"
+                "Path('result.txt').write_text(gram.GRAM_VALUE)\n",
+                encoding="utf-8",
+            )
+            from unittest.mock import patch
+            # ScriptRunner launches a subprocess, so invoke from project root.
+            with patch("os.getcwd", return_value=str(easyc)):
+                self.assertTrue((gram_src / "gram" / "__init__.py").is_file())
+            bootstrap = (context.vendor_path / "__bootstrap__.py").read_text()
+            self.assertIn("gram", bootstrap)
+
+
 if __name__ == "__main__":
     unittest.main()
