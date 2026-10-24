@@ -15,6 +15,7 @@ class PackageConfig:
     """Explicit package metadata to override or bypass runtime heuristic discovery."""
 
     name: str
+    import_name: str = ""
     version: str = ""
     package_type: str = "pure-python"
     dll_directories: list[str] = field(default_factory=list)
@@ -30,8 +31,14 @@ class PackageConfig:
         exports_data = data.get("exports", {})
 
         raw_name = pkg_data.get("name", "")
+        # `package` is the official import name; `packname` is the legacy
+        # field used by existing Gram manifests and remains supported.
+        import_name = str(pkg_data.get("package") or pkg_data.get("packname") or "")
+        if import_name and not all(part.isidentifier() for part in import_name.split(".")):
+            raise ValueError(f"Invalid importable Python package name: {import_name!r}")
         return cls(
             name=normalize_package_name(raw_name) if raw_name else "",
+            import_name=import_name,
             version=str(pkg_data.get("version", "")),
             package_type=pkg_data.get("type", "pure-python"),
             dll_directories=list(runtime_data.get("dll_directories", [])),
