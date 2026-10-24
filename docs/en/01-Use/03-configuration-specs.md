@@ -62,7 +62,8 @@ When `vnma_config.toml` is present, `vnma` prioritizes its declarations over aut
 
 ```toml
 [package]
-name = "my-library"
+name = "my-library"      # Distribution identifier; may contain hyphens
+package = "my_library"  # Python import name: import my_library
 version = "0.1.0"
 type = "pure-python"  # "pure-python" | "native" | "mixed"
 
@@ -94,13 +95,68 @@ entry_points = {
 
 | Section | Field | Type | Description |
 | :--- | :--- | :--- | :--- |
-| `[package]` | `name` | string | Canonical package name (normalized according to PEP 503). |
+| `[package]` | `name` | string | Distribution identifier (PEP 503 normalized). It does not need to equal the imported module name. |
+| `[package]` | `package` | string | **Official Python import name**, e.g. `gram` when the distribution is called `gram-framework`. Must use valid dotted Python identifiers. |
+| `[package]` | `packname` | string | Legacy alias for `package` (supported for existing Gram manifests). `package` wins when both are set. |
 | `[package]` | `version` | string | Package release version (e.g. `"1.0.0"`). Overrides fallback versioning. |
 | `[package]` | `type` | string | Package classification: `"pure-python"` (default), `"native"`, or `"mixed"`. |
 | `[runtime]` | `dll_directories` | list of strings | Subdirectories containing native shared objects (`.dll`, `.so`, `.dylib`). Injected into `_DLL_SUBDIRS` in `__bootstrap__.py`. |
 | `[runtime]` | `hermetic` | boolean | Defaults to `true`. When enabled, prevents runtime fallback to global Python `site-packages`. |
 | `[exports]` | `modules` | list of strings | Root Python packages or modules exported by this distribution. |
 | `[exports]` | `entry_points` | table / map | Map of binary name to Python callable `module.submodule:function`. Wrappers are written to `.bin/`. |
+
+---
+
+### Gram and EasyC compatibility
+
+Gram's actual manifest uses a distribution name such as
+\`gram-framework2.0.0Beta\`, the legacy field \`packname = "gram"\`,
+\`[exports] modules = ["gram"]\` and an entry point for \`gram.__main__\`.
+VNMA still accepts that unchanged. New manifests should express the same
+contract explicitly:
+
+\`\`\`toml
+[package]
+name = "gram-framework2.0.0Beta"
+package = "gram"
+version = "2.0.0b1"
+type = "pure-python"
+
+[runtime]
+dll_directories = []
+hermetic = true
+
+[exports]
+modules = ["gram"]
+
+[exports.entry_points]
+gram = "gram.__main__:main"
+\`\`\`
+
+\`name\` remains the dependency/distribution identity used in VNMA's
+manifest and resolution; \`package\` is the Python import identity,
+validated against the installed wheel's modules. It is not a rename
+of \`gram\` to the distribution name.
+
+EasyC's \`vnma.toml.example\` remains supported without changes, including
+editable local dependencies (\`{ path = "...", editable = true }\`)
+and Git branch dependencies (\`{ git = "...", branch = "main" }\`).
+
+### Atomic installation in 0.3.0
+
+\`vnma install\`, \`update\`, \`link\`, and \`reload\` stage their
+vendor operations in a temporary sibling folder and publish the whole
+vendor tree only on success. Package removal and prune from the CLI
+also stage modifications. Failed commands restore the previous vendor,
+project config and lockfile. A journal supports recovery after a process
+crash, with an exclusive lock against concurrent mutations. The
+generated CLI wrappers use relocation-safe paths.
+
+Limitations: whole-tree copy staging may require extra disk space
+(up to roughly another vendor tree), and on Windows the two renames
+are **recoverable but not one atomic directory-swap primitive**.
+The generic full-workspace \`uninstall --all\` purge remains an
+explicit destructive operation, not a rollback transaction.
 
 ---
 
