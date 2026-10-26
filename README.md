@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="badge/header.jpeg" alt="VNMA Header" width="100%">
+  <img src="centra_discentra/badge/header.jpeg" alt="VNMA Header" width="100%">
 </p>
 
 <p align="center">
@@ -294,5 +294,5 @@ This software is released under a modified permissive license. See [LICENSE](LIC
 ---
 
 <p align="center">
-  <img src="badge/footer.jpeg" alt="VNMA Footer" width="100%">
+  <img src="centra_discentra/badge/footer.jpeg" alt="VNMA Footer" width="100%">
 </p>
