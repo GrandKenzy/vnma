@@ -1,0 +1,10 @@
+[package]
+name = "sub-parser"
+version = "1.0.0"
+type = "pure-python"
+
+[exports]
+modules = ["sub_parser"]
+
+[dependencies]
+gram = { git = "https://github.com/GrandKenzy/Gram.git", branch = "main" }

@@ -8,6 +8,7 @@ from typing import Sequence
 
 from vnma.core.config import ConfigHandler
 from vnma.core.context import ProjectContext
+from vnma.core.dependency_inspector import DependencyInspector
 from vnma.core.models import PackageSpec, normalize_package_name
 from vnma.core.path_resolver import PortablePathResolver
 from vnma.runtime.bootstrap import BootstrapGenerator
@@ -64,70 +65,8 @@ class LinkManager:
 
     @staticmethod
     def inspect_target(target_path: Path) -> tuple[str, list[str], list[PackageSpec]]:
-        """Inspect target directory for vnma_config.toml or pyproject.toml to extract metadata."""
-        resolved = target_path.resolve()
-        vnma_cfg = resolved / "vnma_config.toml"
-        pyproject_cfg = resolved / "pyproject.toml"
-
-        pkg_name = normalize_package_name(resolved.name)
-        module_paths: list[str] = []
-        dependencies: list[PackageSpec] = []
-
-        if vnma_cfg.is_file():
-            try:
-                with vnma_cfg.open("rb") as f:
-                    data = tomllib.load(f)
-                pkg_data = data.get("package", {})
-                # Editable links are addressed by the Python import identity,
-                # not by an unrelated distribution label (Gram -> import gram).
-                visible_name = (
-                    pkg_data.get("package")
-                    or pkg_data.get("packname")
-                    or pkg_data.get("name")
-                )
-                if visible_name:
-                    pkg_name = normalize_package_name(str(visible_name))
-                exports_data = data.get("exports", {})
-                declared_modules = exports_data.get("modules", [])
-                for mod in declared_modules:
-                    cand = resolved / mod
-                    if cand.is_dir():
-                        if (cand / "__init__.py").is_file():
-                            target_cand = cand.parent.resolve()
-                        else:
-                            target_cand = cand.resolve()
-                    elif cand.is_file():
-                        target_cand = cand.parent.resolve()
-                    else:
-                        target_cand = resolved
-                    module_paths.append(PortablePathResolver.to_portable_string(target_cand))
-                deps_data = data.get("dependencies", {})
-                for dep_name, dep_spec in deps_data.items():
-                    raw = f"{dep_name}{dep_spec}" if isinstance(dep_spec, str) and dep_spec != "*" else str(dep_name)
-                    dependencies.append(PackageSpec.parse(raw))
-            except Exception:
-                pass
-        elif pyproject_cfg.is_file():
-            try:
-                with pyproject_cfg.open("rb") as f:
-                    data = tomllib.load(f)
-                proj_data = data.get("project", {})
-                if "name" in proj_data:
-                    pkg_name = normalize_package_name(str(proj_data["name"]))
-                if "dependencies" in proj_data and isinstance(proj_data["dependencies"], list):
-                    for req in proj_data["dependencies"]:
-                        dependencies.append(PackageSpec.parse(req))
-            except Exception:
-                pass
-
-        if not module_paths:
-            src_dir = resolved / "src"
-            if src_dir.is_dir():
-                module_paths.append(PortablePathResolver.to_portable_string(src_dir.resolve()))
-            else:
-                module_paths.append(PortablePathResolver.to_portable_string(resolved))
-
-        return pkg_name, module_paths, dependencies
+        """Inspect target directory for vnma.toml, vnma_config.toml, or pyproject.toml."""
+        return DependencyInspector.inspect(target_path)
 
     def link(self, raw_path: str) -> tuple[PackageSpec, list[PackageSpec]]:
         """Register a local source directory in live zero-copy editable mode."""

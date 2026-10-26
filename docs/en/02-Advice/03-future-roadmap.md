@@ -4,7 +4,14 @@ This document outlines completed capabilities in recent releases and future arch
 
 ---
 
-## 1. Recently Implemented (v0.3.0)
+## 1. Recently Implemented
+
+### v0.3.2
+
+* **Nested Dependencies:** Dependencies declared by Git and local packages are resolved with the root manifest, with diamond deduplication and topological install order.
+* **`vnma insert-import`:** Adds the bootstrap import to an entry script so it runs with plain `python`.
+
+### v0.3.0
 
 * **Orphan Pruning (`vnma prune`):** Identifies and removes packages in `vendor/` that are no longer referenced by `vnma.toml` or active dependencies.
 * **Offline Mode (`--offline`):** Allows restoring dependencies strictly from local wheel caches without contacting external networks.

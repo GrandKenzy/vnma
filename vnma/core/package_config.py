@@ -22,6 +22,38 @@ class PackageConfig:
     modules: list[str] = field(default_factory=list)
     hermetic: bool = True
     import_name: str = ""
+    dependencies: dict[str, Any] = field(default_factory=dict)
+
+    def get_specs(self, base_dir: Path | None = None) -> list[Any]:
+        """Convert declared dependencies into PackageSpec instances."""
+        from vnma.core.models import PackageSpec
+        from vnma.core.path_resolver import PortablePathResolver
+
+        specs: list[PackageSpec] = []
+        for name, value in self.dependencies.items():
+            norm_name = normalize_package_name(name)
+            if isinstance(value, dict):
+                if "path" in value:
+                    specs.append(
+                        PackageSpec(
+                            name=norm_name,
+                            path=PortablePathResolver.expand(value["path"], base_dir=base_dir),
+                            editable=bool(value.get("editable", False)),
+                        )
+                    )
+                elif "git" in value:
+                    ref = value.get("branch") or value.get("tag") or value.get("commit") or "main"
+                    specs.append(
+                        PackageSpec(
+                            name=norm_name,
+                            git_url=value["git"],
+                            git_ref=ref,
+                        )
+                    )
+            elif isinstance(value, str):
+                raw = f"{norm_name}{value}" if value and value != "*" else norm_name
+                specs.append(PackageSpec.parse(raw))
+        return specs
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PackageConfig:
@@ -29,6 +61,7 @@ class PackageConfig:
         pkg_data = data.get("package", {})
         runtime_data = data.get("runtime", {})
         exports_data = data.get("exports", {})
+        deps_data = data.get("dependencies", {})
 
         raw_name = pkg_data.get("name", "")
         # `package` is the official import name; `packname` is the legacy
@@ -45,6 +78,7 @@ class PackageConfig:
             entry_points=dict(exports_data.get("entry_points", {})),
             modules=list(exports_data.get("modules", [])),
             hermetic=bool(runtime_data.get("hermetic", True)),
+            dependencies=dict(deps_data),
         )
 
     @classmethod

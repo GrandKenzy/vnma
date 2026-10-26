@@ -1,0 +1,7 @@
+[project]
+name = "main-project"
+version = "1.0.0"
+
+[dependencies]
+gram = { git = "https://github.com/GrandKenzy/Gram.git", branch = "main" }
+sub-parser = { path = "../subproject" }

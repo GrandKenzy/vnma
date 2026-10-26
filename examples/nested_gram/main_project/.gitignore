@@ -1,0 +1,5 @@
+# --- VNMA (Vendor Manager) ---
+/vendor/
+/vendor_vnma/
+.vnma_meta/
+vnma_cache/

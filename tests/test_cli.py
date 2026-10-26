@@ -639,6 +639,104 @@ class TestCliTestCommand(unittest.TestCase):
             self.assertIn("No test directory", buf.getvalue())
 
 
+
+class TestCliInsertImport(unittest.TestCase):
+    """Test vnma insert-import command execution, shebang preservation, and idempotency."""
+
+    def test_insert_import_creates_new_file(self) -> None:
+        """Verify insert-import creates main.py with bootstrap when target does not exist."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = args.handler(args, context)
+
+            self.assertEqual(code, 0)
+            target = root / "main.py"
+            self.assertTrue(target.is_file())
+            content = target.read_text(encoding="utf-8")
+            self.assertIn("import vendor.__bootstrap__  # From VNMA.", content)
+            self.assertIn("def main() -> None:", content)
+
+    def test_insert_import_existing_file(self) -> None:
+        """Verify insert-import injects at top of an existing script."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            target.write_text("print('hello')\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = args.handler(args, context)
+
+            self.assertEqual(code, 0)
+            content = target.read_text(encoding="utf-8")
+            self.assertTrue(content.startswith("import vendor.__bootstrap__  # From VNMA.\n"))
+            self.assertIn("print('hello')", content)
+
+    def test_insert_import_with_shebang(self) -> None:
+        """Verify insert-import preserves shebang line and inserts right after it."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            target.write_text("#!/usr/bin/env python3\nprint('cli')\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            lines = target.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(lines[0], "#!/usr/bin/env python3")
+            self.assertEqual(lines[1], "import vendor.__bootstrap__  # From VNMA.")
+            self.assertEqual(lines[2], "print('cli')")
+
+    def test_insert_import_idempotent(self) -> None:
+        """Verify running insert-import multiple times does not duplicate the import."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            target.write_text("import vendor.__bootstrap__  # From VNMA.\nprint('ok')\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = args.handler(args, context)
+
+            self.assertEqual(code, 0)
+            self.assertIn("already present", buf.getvalue())
+            content = target.read_text(encoding="utf-8")
+            self.assertEqual(content.count("vendor.__bootstrap__"), 1)
+
+    def test_insert_import_custom_target(self) -> None:
+        """Verify insert-import accepts a custom script path."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            custom = root / "cli" / "entry.py"
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import", "cli/entry.py"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            self.assertTrue(custom.is_file())
+            content = custom.read_text(encoding="utf-8")
+            self.assertIn("import vendor.__bootstrap__  # From VNMA.", content)
+
+
 if __name__ == "__main__":
     unittest.main()
 

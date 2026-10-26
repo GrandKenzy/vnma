@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from vnma.core.config import ConfigHandler
+from vnma.core.config import ConfigHandler, VnmaConfig
 from vnma.core.context import ProjectContext
-from vnma.core.models import VnmaManifest, normalize_package_name
+from vnma.core.models import PackageSpec, VnmaManifest, normalize_package_name
 from vnma.core.path_resolver import PortablePathResolver
 
 
@@ -92,8 +92,12 @@ class LockfileHandler:
         return True
 
     @classmethod
-    def update(cls, context: ProjectContext) -> Path:
-        """Atomically synchronize vnma.lock from manifest.json and declared specifications."""
+    def update(
+        cls,
+        context: ProjectContext,
+        resolved_specs: dict[str, PackageSpec] | None = None,
+    ) -> Path:
+        """Atomically synchronize vnma.lock from manifest.json and declared/resolved specifications."""
         manifest_data = VnmaManifest()
         if context.manifest_path.is_file():
             try:
@@ -104,6 +108,10 @@ class LockfileHandler:
 
         config = ConfigHandler.load(context.config_path, context.pyproject_path)
         specs_by_name = {spec.name: spec for spec in config.get_all_specs()}
+        if resolved_specs:
+            for k, v in resolved_specs.items():
+                if k not in specs_by_name:
+                    specs_by_name[k] = v
 
         locked_packages: dict[str, dict[str, Any]] = {}
         for pkg_name, record in sorted(manifest_data.packages.items()):
@@ -133,7 +141,11 @@ class LockfileHandler:
                 "files_count": len(record.files),
             }
 
-        for spec in config.get_all_specs():
+        all_specs_list = list(config.get_all_specs())
+        if resolved_specs:
+            all_specs_list.extend(resolved_specs.values())
+
+        for spec in all_specs_list:
             if spec.editable and spec.path:
                 portable = PortablePathResolver.to_portable_string(spec.path, context.project_root)
                 locked_packages[spec.name] = {
@@ -156,4 +168,3 @@ class LockfileHandler:
         )
         tmp_path.replace(context.lock_path)
         return context.lock_path
-

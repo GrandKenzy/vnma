@@ -11,6 +11,7 @@ from pathlib import Path
 from vnma.core.cleaner import WorkspaceCleaner
 from vnma.core.config import ConfigHandler, VnmaConfig
 from vnma.core.context import ProjectContext
+from vnma.core.dag_resolver import TransitiveDagResolver
 from vnma.core.link_manager import LinkManager
 from vnma.core.lockfile import LockfileHandler
 from vnma.core.transaction import atomic_workspace_command, WorkspaceTransaction
@@ -100,6 +101,62 @@ def cmd_generate(args: argparse.Namespace, context: ProjectContext) -> int:
     print(f"[vnma] Generated '{target_path.name}' for project '{folder_name}' (v1.0.0)")
     return 0
 
+def cmd_insert_import(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Insert VNMA bootstrap import statement into project entry point script."""
+    target_arg = getattr(args, "target", None)
+    target_path = None
+
+    if target_arg:
+        candidate = Path(target_arg)
+        target_path = candidate if candidate.is_absolute() else (context.project_root / candidate)
+    else:
+        try:
+            resolver = EntryPointResolver(context.project_root)
+            target_path = resolver.resolve()
+        except FileNotFoundError:
+            target_path = context.project_root / "main.py"
+
+    vendor_name = context.vendor_name or "vendor"
+    bootstrap_line = f"import {vendor_name}.__bootstrap__  # From VNMA."
+
+    try:
+        display_name = target_path.relative_to(context.project_root).as_posix()
+    except Exception:
+        display_name = str(target_path)
+
+    if not target_path.exists():
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        content = (
+            f"{bootstrap_line}\n\n\n"
+            "def main() -> None:\n"
+            '    print("Hello from VNMA!")\n\n\n'
+            'if __name__ == "__main__":\n'
+            "    main()\n"
+        )
+        target_path.write_text(content, encoding="utf-8")
+        print(f"[vnma] Created '{display_name}' with VNMA bootstrap import.")
+        return 0
+
+    existing_text = target_path.read_text(encoding="utf-8")
+    if f"{vendor_name}.__bootstrap__" in existing_text or "__bootstrap__" in existing_text:
+        print(f"[vnma] Bootstrap import already present in '{display_name}'.")
+        return 0
+
+    lines = existing_text.splitlines(keepends=True)
+    insert_idx = 0
+
+    if lines and lines[0].startswith("#!"):
+        insert_idx = 1
+        if len(lines) > 1 and re.search(r"coding[:=]\s*([-\w.]+)", lines[1]):
+            insert_idx = 2
+    elif lines and re.search(r"coding[:=]\s*([-\w.]+)", lines[0]):
+        insert_idx = 1
+
+    lines.insert(insert_idx, f"{bootstrap_line}\n")
+    target_path.write_text("".join(lines), encoding="utf-8")
+    print(f"[vnma] Inserted bootstrap import into '{display_name}'.")
+    return 0
+
 
 @atomic_workspace_command
 def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
@@ -154,12 +211,20 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
                 print(f"[vnma] Restored environment matching {context.lock_path.name}")
                 return 0
 
-        pypi_specs: list[PackageSpec] = []
-        for spec in specs:
+        dag_resolver = TransitiveDagResolver(cloner, resolver, offline=offline)
+        try:
+            plan = dag_resolver.resolve(specs)
+        except (DependencyConflictError, ValueError) as err:
+            print(f"[vnma] Resolution error: {err}")
+            if offline:
+                print("[vnma] Hint: Ensure required wheels exist in ~/.vnma/cache/wheels or pass --find-links <dir>")
+            return 1
+
+        for spec in plan.ordered_specs:
+            norm_name = normalize_package_name(spec.name)
             if spec.path:
                 if spec.editable:
-                    link_spec, link_deps = LinkManager(context).link(str(spec.path))
-                    pypi_specs.extend(link_deps)
+                    LinkManager(context).link(str(spec.path))
                 else:
                     _install_local_spec(spec, builder, installer)
             elif spec.git_url:
@@ -167,23 +232,11 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
                     print(f"[vnma] WARNING: Git dependency '{spec.name}' may require network connectivity.")
                 _install_git_spec(spec, cloner, builder, installer)
             else:
-                pypi_specs.append(spec)
+                wheel_rel = plan.pypi_wheel_releases.get(norm_name)
+                if wheel_rel:
+                    _download_and_install(spec, wheel_rel, cache, installer)
 
-        if pypi_specs:
-            origin = "local cache" if offline else "PyPI"
-            print(f"[vnma] Resolving {len(pypi_specs)} package(s) from {origin} and transitive dependencies...")
-            try:
-                resolved_pairs = resolver.resolve_graph(pypi_specs)
-            except (DependencyConflictError, ValueError) as err:
-                print(f"[vnma] Resolution error: {err}")
-                if offline:
-                    print("[vnma] Hint: Ensure required wheels exist in ~/.vnma/cache/wheels or pass --find-links <dir>")
-                return 1
-
-            for spec, wheel_rel in resolved_pairs:
-                _download_and_install(spec, wheel_rel, cache, installer)
-
-        LockfileHandler.update(context)
+        LockfileHandler.update(context, resolved_specs=plan.all_resolved_specs)
         print(f"[vnma] Synchronized {context.lock_path.name}")
         return 0
 
@@ -194,48 +247,33 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         target_path = str(root_spec.path or target_pkg)
         link_spec, link_deps = LinkManager(context).link(target_path)
         if link_deps:
+            dag_resolver = TransitiveDagResolver(cloner, resolver, offline=offline)
             try:
-                resolved_pairs = resolver.resolve_graph(link_deps)
-                for dep_spec, wheel_rel in resolved_pairs:
-                    _download_and_install(dep_spec, wheel_rel, cache, installer)
+                plan = dag_resolver.resolve(link_deps)
+                for dep_spec in plan.ordered_specs:
+                    norm = normalize_package_name(dep_spec.name)
+                    if dep_spec.path:
+                        if dep_spec.editable:
+                            LinkManager(context).link(str(dep_spec.path))
+                        else:
+                            _install_local_spec(dep_spec, builder, installer)
+                    elif dep_spec.git_url:
+                        _install_git_spec(dep_spec, cloner, builder, installer)
+                    else:
+                        wheel_rel = plan.pypi_wheel_releases.get(norm)
+                        if wheel_rel:
+                            _download_and_install(dep_spec, wheel_rel, cache, installer)
+                LockfileHandler.update(context, resolved_specs=plan.all_resolved_specs)
             except Exception:
                 pass
-        LockfileHandler.update(context)
+        else:
+            LockfileHandler.update(context)
         print(f"[vnma] Synchronized {context.lock_path.name}")
         return 0
 
-    if root_spec.path:
-        record = _install_local_spec(root_spec, builder, installer)
-        add_fn = ConfigHandler.add_dev_dependency if is_dev else ConfigHandler.add_dependency
-        add_fn(
-            context.config_path,
-            record.name,
-            {"path": str(root_spec.path.as_posix())},
-            pyproject_path=context.pyproject_path,
-        )
-        LockfileHandler.update(context)
-        print(f"[vnma] Synchronized {context.lock_path.name}")
-        return 0
-
-    if root_spec.git_url:
-        if offline:
-            print(f"[vnma] WARNING: Git dependency '{root_spec.name}' may require network connectivity.")
-        record = _install_git_spec(root_spec, cloner, builder, installer)
-        add_fn = ConfigHandler.add_dev_dependency if is_dev else ConfigHandler.add_dependency
-        add_fn(
-            context.config_path,
-            record.name,
-            {"git": root_spec.git_url, "branch": root_spec.git_ref or "main"},
-            pyproject_path=context.pyproject_path,
-        )
-        LockfileHandler.update(context)
-        print(f"[vnma] Synchronized {context.lock_path.name}")
-        return 0
-
-    origin = "local cache" if offline else "PyPI"
-    print(f"[vnma] Resolving '{root_spec.name}' from {origin} and transitive dependencies...")
+    dag_resolver = TransitiveDagResolver(cloner, resolver, offline=offline)
     try:
-        resolved_pairs = resolver.resolve_graph([root_spec])
+        plan = dag_resolver.resolve([root_spec])
     except (DependencyConflictError, ValueError) as err:
         print(f"[vnma] Resolution error: {err}")
         if offline:
@@ -243,13 +281,42 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
         return 1
 
     primary_record = None
-    for spec, wheel_rel in resolved_pairs:
-        record = _download_and_install(spec, wheel_rel, cache, installer)
-        if spec.name == root_spec.name:
+    for spec in plan.ordered_specs:
+        norm = normalize_package_name(spec.name)
+        record = None
+        if spec.path:
+            if spec.editable:
+                LinkManager(context).link(str(spec.path))
+            else:
+                record = _install_local_spec(spec, builder, installer)
+        elif spec.git_url:
+            if offline:
+                print(f"[vnma] WARNING: Git dependency '{spec.name}' may require network connectivity.")
+            record = _install_git_spec(spec, cloner, builder, installer)
+        else:
+            wheel_rel = plan.pypi_wheel_releases.get(norm)
+            if wheel_rel:
+                record = _download_and_install(spec, wheel_rel, cache, installer)
+
+        if norm == normalize_package_name(root_spec.name):
             primary_record = record
 
-    if primary_record:
-        add_fn = ConfigHandler.add_dev_dependency if is_dev else ConfigHandler.add_dependency
+    add_fn = ConfigHandler.add_dev_dependency if is_dev else ConfigHandler.add_dependency
+    if root_spec.path:
+        add_fn(
+            context.config_path,
+            primary_record.name if primary_record else root_spec.name,
+            {"path": str(root_spec.path.as_posix())},
+            pyproject_path=context.pyproject_path,
+        )
+    elif root_spec.git_url:
+        add_fn(
+            context.config_path,
+            primary_record.name if primary_record else root_spec.name,
+            {"git": root_spec.git_url, "branch": root_spec.git_ref or "main"},
+            pyproject_path=context.pyproject_path,
+        )
+    elif primary_record:
         add_fn(
             context.config_path,
             primary_record.name,
@@ -257,8 +324,7 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
             pyproject_path=context.pyproject_path,
         )
 
-
-    LockfileHandler.update(context)
+    LockfileHandler.update(context, resolved_specs=plan.all_resolved_specs)
     print(f"[vnma] Synchronized {context.lock_path.name}")
     return 0
 
@@ -1116,6 +1182,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to the script")
     run_parser.set_defaults(handler=cmd_run)
+
+    insert_parser = subparsers.add_parser(
+        "insert-import", help="Insert VNMA bootstrap import into project entry point"
+    )
+    insert_parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Target Python script (defaults to main.py or auto-discovered entry point)",
+    )
+    insert_parser.set_defaults(handler=cmd_insert_import)
 
     exec_parser = subparsers.add_parser("exec", help="Execute an installed binary from vendor/.bin")
     exec_parser.add_argument("binary", help="Binary or CLI name (e.g. pytest)")

@@ -1,6 +1,6 @@
 # Beta Status & Stability Considerations
 
-`vnma` is currently in **Beta (v0.3.1)**. This document provides an objective summary of tested environments, stability expectations, and recommended deployment practices.
+`vnma` is currently in **Beta (v0.3.2)**. This document provides an objective summary of tested environments, stability expectations, and recommended deployment practices.
 
 ---
 
@@ -11,7 +11,8 @@ The following capabilities have been tested across representative scenarios:
 * **CPython Compatibility:** Validated on CPython 3.11, 3.12, and 3.14 on Windows (amd64) and Linux.
 * **Native C/C++ Extensions:** Verified with packages distributing compiled `.pyd` files and shared libraries (e.g., `pygame-ce` bundling SDL2 runtime DLLs).
 * **Transitive Dependency Graphs:** Validated with deep dependency trees (e.g., `requests` resolving `urllib3`, `certifi`, `idna`, `charset-normalizer`).
-* **PEP 517 Local Builds:** Verified using local source trees containing `pyproject.toml` (e.g., `Gram Framework`).
+* **PEP 517 Local Builds:** Verified using local source trees containing `pyproject.toml` with a `vnma_config.toml` manifest.
+* **Nested Dependencies:** Validated with a Git dependency that is also required by a local package two levels deep (diamond case); see [Nested Dependencies](../01-Use/06-nested-dependencies.md).
 * **Security Controls:** Validated single-pass extraction, canonical path checking against Zip Slip, and symlink prohibition.
 * **Hermetic Execution:** Validated exclusion of global `site-packages` while retaining CPython standard library extensions.
 

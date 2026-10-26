@@ -21,7 +21,7 @@ colorama = "==0.4.6"
 pygame-ce = ">=2.5.0, <2.6.0"
 
 # Local source directory dependency:
-gram-framework = { path = "./packages/my-internal-tool" }
+my-internal-tool = { path = "./packages/my-internal-tool" }
 
 # Git repository dependency:
 custom-fork = { git = "https://github.com/user/fork.git", branch = "main" }
@@ -96,29 +96,30 @@ entry_points = {
 | Section | Field | Type | Description |
 | :--- | :--- | :--- | :--- |
 | `[package]` | `name` | string | Distribution identifier (PEP 503 normalized). It does not need to equal the imported module name. |
-| `[package]` | `package` | string | **Official Python import name**, e.g. `gram` when the distribution is called `gram-framework`. Must use valid dotted Python identifiers. |
-| `[package]` | `packname` | string | Legacy alias for `package` (supported for existing Gram manifests). `package` wins when both are set. |
+| `[package]` | `package` | string | **Official Python import name**, e.g. `my_lib` when the distribution is called `my-lib-framework`. Must use valid dotted Python identifiers. |
+| `[package]` | `packname` | string | Legacy alias for `package` (supported for existing manifests). `package` wins when both are set. |
 | `[package]` | `version` | string | Package release version (e.g. `"1.0.0"`). Overrides fallback versioning. |
 | `[package]` | `type` | string | Package classification: `"pure-python"` (default), `"native"`, or `"mixed"`. |
 | `[runtime]` | `dll_directories` | list of strings | Subdirectories containing native shared objects (`.dll`, `.so`, `.dylib`). Injected into `_DLL_SUBDIRS` in `__bootstrap__.py`. |
 | `[runtime]` | `hermetic` | boolean | Defaults to `true`. When enabled, prevents runtime fallback to global Python `site-packages`. |
 | `[exports]` | `modules` | list of strings | Root Python packages or modules exported by this distribution. |
 | `[exports]` | `entry_points` | table / map | Map of binary name to Python callable `module.submodule:function`. Wrappers are written to `.bin/`. |
+| `[dependencies]` | *name* | string / table | Dependencies of this package: a PyPI constraint, `{ git = ..., branch = ... }`, or `{ path = ... }`. Installed together with the package (see [Nested Dependencies](06-nested-dependencies.md)). |
 
 ---
 
-### Gram and EasyC compatibility
+### Distribution name vs. import name
 
-Gram's actual manifest uses a distribution name such as
-`gram-framework2.0.0Beta`, the legacy field `packname = "gram"`,
-`[exports] modules = ["gram"]` and an entry point for `gram.__main__`.
-VNMA still accepts that unchanged. New manifests should express the same
-contract explicitly:
+A distribution name can differ from the name you import. For example, a
+manifest may use a distribution name such as `my-lib-framework2.0.0Beta`, the
+legacy field `packname = "my_lib"`, `[exports] modules = ["my_lib"]`, and an
+entry point for `my_lib.__main__`. VNMA still accepts that unchanged. New
+manifests should express the same contract explicitly:
 
 ```toml
 [package]
-name = "gram-framework2.0.0Beta"
-package = "gram"
+name = "my-lib-framework2.0.0Beta"
+package = "my_lib"
 version = "2.0.0b1"
 type = "pure-python"
 
@@ -127,20 +128,20 @@ dll_directories = []
 hermetic = true
 
 [exports]
-modules = ["gram"]
+modules = ["my_lib"]
 
 [exports.entry_points]
-gram = "gram.__main__:main"
+my-lib = "my_lib.__main__:main"
 ```
 
 `name` remains the dependency/distribution identity used in VNMA's
 manifest and resolution; `package` is the Python import identity,
 validated against the installed wheel's modules. It is not a rename
-of `gram` to the distribution name.
+of `my_lib` to the distribution name.
 
-EasyC's `vnma.toml.example` remains supported without changes, including
-editable local dependencies (`{ path = "...", editable = true }`)
-and Git branch dependencies (`{ git = "...", branch = "main" }`).
+Editable local dependencies (`{ path = "...", editable = true }`) and Git
+branch dependencies (`{ git = "...", branch = "main" }`) are supported
+in the root manifest.
 
 ### Atomic installation in 0.3.0
 

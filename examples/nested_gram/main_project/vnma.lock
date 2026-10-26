@@ -1,0 +1,29 @@
+{
+  "lockfile_version": "1.0",
+  "packages": {
+    "gram": {
+      "active_extras": [],
+      "dll_directories": [],
+      "files_count": 95,
+      "git_ref": "main",
+      "git_url": "https://github.com/GrandKenzy/Gram.git",
+      "has_native_binaries": false,
+      "sha256": "c93ab0bd8749ba129fde152db67d88a32b6cf90e133d8833f834838c7da8fd02",
+      "source": "git",
+      "version": "2.0.0b3",
+      "wheel_filename": "gram_framework2_0_0b3-2.0.0b3-py3-none-any.whl"
+    },
+    "sub-parser": {
+      "active_extras": [],
+      "dll_directories": [],
+      "files_count": 6,
+      "has_native_binaries": false,
+      "path": "C:/Users/Kentucky/Desktop/PROYECTOS _ PYTHON/vnma/examples/nested_gram/subproject",
+      "sha256": "5e1bdef95206e69e58709632070885a903f4a21e09869c7b5bf780ad164c6e5b",
+      "source": "local",
+      "version": "1.0.0",
+      "wheel_filename": "sub_parser-1.0.0-py3-none-any.whl"
+    }
+  },
+  "python_version": "3.14.7"
+}

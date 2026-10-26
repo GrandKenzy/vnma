@@ -33,3 +33,12 @@ Certain legacy Python packages perform runtime inspection of `site-packages` or 
 ## 4. PEP 658 Network Optimization
 
 PyPI supports PEP 658 core metadata downloads (fetching small `.metadata` files rather than full `.whl` archives during dependency resolution). `vnma` currently resolves requirements by inspecting release metadata via the PyPI JSON API and downloading wheels into cache. Full PEP 658 Simple API streaming is scheduled for upcoming releases.
+
+---
+
+## 5. Same Package Declared from Different Sources
+
+When the same package is declared by the root manifest and by a dependency, or by two dependencies, with different Git refs or paths:
+
+* **Impact:** only one source can be installed into `vendor/`.
+* **Current Behavior:** the root declaration wins. Between two non-root declarations, the first one discovered is used. The difference is not reported. See [Nested Dependencies](../01-Use/06-nested-dependencies.md#4-precedence).

@@ -42,6 +42,8 @@ import pygame
 # Application code follows...
 ```
 
+Run `vnma insert-import` to add this line automatically. See [Entry Points Without `vnma run`](07-entry-point-bootstrap.md).
+
 ---
 
 ## 3. Runtime Path Isolation
@@ -78,14 +80,14 @@ At startup:
 
 ## 5. CLI Executables (`vnma exec`)
 
-When packages declare console scripts (e.g., `pytest`, `black`, `gram`):
+When packages declare console scripts (e.g., `pytest`, `black`, `my-tool`):
 * `vnma` generates executable wrapper scripts in `vendor/.vnma_meta/.bin/`.
 * Wrappers configure `PYTHONPATH` and launch the tool using the host Python interpreter.
 
 To invoke an installed tool:
 
 ```bash
-vnma exec gram --help
+vnma exec my-tool --help
 # or directly on Windows:
-.\vendor\.vnma_meta\.bin\gram.cmd --help
+.\vendor\.vnma_meta\.bin\my-tool.cmd --help
 ```

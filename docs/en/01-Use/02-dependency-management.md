@@ -73,6 +73,8 @@ In `vnma.toml`, this is recorded as:
 requests = { git = "https://github.com/psf/requests.git", branch = "main" }
 ```
 
+Dependencies that the repository declares for itself are resolved and installed too; see [Nested Dependencies](06-nested-dependencies.md).
+
 ---
 
 ## 2. Restoring Dependencies (Team / CI Workflow)
@@ -146,7 +148,7 @@ Output format:
 Package                   Version         Native    
 ----------------------------------------------------
 colorama                  0.4.6           No        
-gram-framework            2.0.0b0         No        
+my-internal-tool          1.0.0           No        
 pygame-ce                 2.5.8           Yes       
 requests                  2.34.2          No        
 ```
@@ -224,7 +226,7 @@ Upgrades are performed transactionally: obsolete files from previous package ver
 
 ## 8. Live Development Links (`vnma link`, `vnma unlink`, `vnma reload`)
 
-When developing a library (such as an internal SDK or framework like `Gram`) alongside an application that consumes it, rebuilding and installing wheels on every edit slows down iteration.
+When developing a library (such as an internal SDK or framework) alongside an application that consumes it, rebuilding and installing wheels on every edit slows down iteration.
 
 `vnma` provides zero-copy live development links:
 
