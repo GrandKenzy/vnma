@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="VNMA Banner" width="100%">
+  <img src="badge/header.jpeg" alt="VNMA Header" width="100%">
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@
 
 # VNMA (Vendor Manager)
 
-> **Status:** Beta (v0.3.1)  
+> **Status:** Beta (v0.3.2)  
 > **Platform Support:** CPython 3.11, 3.12, 3.13, 3.14 (Tested on Windows and Linux)
 
 `vnma` is a dependency and vendoring manager for Python projects. It installs and manages dependencies inside a local project directory (`vendor/` or `vendor_vnma/`) instead of creating full Python virtual environments (`venv`).
@@ -290,3 +290,9 @@ Full documentation is available in the [`docs/`](docs/) directory:
 ## License
 
 This software is released under a modified permissive license. See [LICENSE](LICENSE) for terms.
+
+---
+
+<p align="center">
+  <img src="badge/footer.jpeg" alt="VNMA Footer" width="100%">
+</p>
