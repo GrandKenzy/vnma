@@ -1,6 +1,6 @@
 # 01. Uso
 
-> **Versión actual:** `0.3.2` (Beta)
+> **Versión actual:** `0.3.3` (Beta)
 
 Esta sección explica cómo instalar VNMA, gestionar las dependencias de un proyecto, configurar proyectos y paquetes, y ejecutar código con el runtime vendoreado.
 

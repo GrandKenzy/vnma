@@ -737,6 +737,218 @@ class TestCliInsertImport(unittest.TestCase):
             self.assertIn("import vendor.__bootstrap__  # From VNMA.", content)
 
 
+    def test_insert_import_empty_file(self) -> None:
+        """Verify insert-import works on an empty file."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            target.write_text("", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            content = target.read_text(encoding="utf-8")
+            self.assertEqual(content, "import vendor.__bootstrap__  # From VNMA.\n")
+            compile(content, str(target), "exec")
+
+    def test_insert_import_future_annotations(self) -> None:
+        """Verify bootstrap is placed after from __future__ import annotations."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            source = '"""Módulo de ejemplo."""\nfrom __future__ import annotations\n\ndef main() -> None:\n    pass\n'
+            target.write_text(source, encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            content = target.read_text(encoding="utf-8")
+            compile(content, str(target), "exec")
+
+            lines = content.splitlines()
+            self.assertEqual(lines[0], '"""Módulo de ejemplo."""')
+            self.assertEqual(lines[1], "from __future__ import annotations")
+            self.assertEqual(lines[2], "import vendor.__bootstrap__  # From VNMA.")
+
+    def test_insert_import_multiple_and_multiline_future(self) -> None:
+        """Verify bootstrap is placed after multiline and multiple __future__ imports."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            source = (
+                "from __future__ import (\n"
+                "    annotations,\n"
+                "    division,\n"
+                ")\n"
+                "from __future__ import print_function\n"
+                "\n"
+                "import sys\n"
+            )
+            target.write_text(source, encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            content = target.read_text(encoding="utf-8")
+            compile(content, str(target), "exec")
+
+            lines = content.splitlines()
+            self.assertEqual(lines[4], "from __future__ import print_function")
+            self.assertEqual(lines[5], "import vendor.__bootstrap__  # From VNMA.")
+
+    def test_insert_import_shebang_encoding_docstring_future(self) -> None:
+        """Verify full header with shebang, encoding, docstring, and __future__."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            source = (
+                "#!/usr/bin/env python3\n"
+                "# -*- coding: utf-8 -*-\n"
+                '"""Full header docstring."""\n'
+                "from __future__ import annotations\n"
+                "\n"
+                "import os\n"
+            )
+            target.write_text(source, encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            content = target.read_text(encoding="utf-8")
+            compile(content, str(target), "exec")
+
+            lines = content.splitlines()
+            self.assertEqual(lines[0], "#!/usr/bin/env python3")
+            self.assertEqual(lines[1], "# -*- coding: utf-8 -*-")
+            self.assertEqual(lines[2], '"""Full header docstring."""')
+            self.assertEqual(lines[3], "from __future__ import annotations")
+            self.assertEqual(lines[4], "import vendor.__bootstrap__  # From VNMA.")
+
+    def test_insert_import_docstring_with_future_text(self) -> None:
+        """Verify docstring containing 'from __future__' text is not confused for AST import."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            source = (
+                '"""\n'
+                'Docstring mentions:\n'
+                'from __future__ import annotations\n'
+                '"""\n'
+                "import os\n"
+            )
+            target.write_text(source, encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            content = target.read_text(encoding="utf-8")
+            compile(content, str(target), "exec")
+
+            lines = content.splitlines()
+            self.assertEqual(lines[4], "import vendor.__bootstrap__  # From VNMA.")
+            self.assertEqual(lines[5], "import os")
+
+    def test_insert_import_comments_and_strings_with_bootstrap_keyword(self) -> None:
+        """Verify comments or strings with '__bootstrap__' do not trigger false positive."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            source = (
+                "# Note: __bootstrap__ is mentioned here\n"
+                'note = "vendor.__bootstrap__"\n'
+            )
+            target.write_text(source, encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            content = target.read_text(encoding="utf-8")
+            compile(content, str(target), "exec")
+            self.assertIn("import vendor.__bootstrap__  # From VNMA.", content)
+
+            # Second execution must be idempotent and not duplicate
+            bytes_before = target.read_bytes()
+            code2 = args.handler(args, context)
+            self.assertEqual(code2, 0)
+            self.assertEqual(target.read_bytes(), bytes_before)
+
+    def test_insert_import_crlf_and_utf8_bom(self) -> None:
+        """Verify UTF-8 BOM and CRLF line endings are strictly preserved."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            bom = b"\xef\xbb\xbf"
+            source_crlf = bom + b"print('crlf')\r\n"
+            target.write_bytes(source_crlf)
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 0)
+            raw = target.read_bytes()
+            self.assertTrue(raw.startswith(bom))
+            text_part = raw[3:].decode("utf-8")
+            self.assertIn("\r\n", text_part)
+            self.assertNotIn("\n\n", text_part.replace("\r\n", "\n"))
+            self.assertTrue(text_part.startswith("import vendor.__bootstrap__  # From VNMA.\r\n"))
+
+            # Idempotent second execution
+            code2 = args.handler(args, context)
+            self.assertEqual(code2, 0)
+            self.assertEqual(target.read_bytes(), raw)
+
+    def test_insert_import_invalid_syntax_does_not_modify(self) -> None:
+        """Verify file with invalid syntax is not overwritten and returns error code."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            source = "def broken(\n"
+            target.write_text(source, encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 1)
+            self.assertEqual(target.read_text(encoding="utf-8"), source)
+
+    def test_insert_import_misplaced_future_does_not_modify(self) -> None:
+        """Verify file with illegally placed __future__ is not modified."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / "main.py"
+            source = "import os\nfrom __future__ import annotations\n"
+            target.write_text(source, encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["insert-import"])
+
+            code = args.handler(args, context)
+            self.assertEqual(code, 1)
+            self.assertEqual(target.read_text(encoding="utf-8"), source)
+
 if __name__ == "__main__":
     unittest.main()
 

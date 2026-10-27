@@ -9,6 +9,10 @@
 
 ## Current release
 
+### [`0.3.3`](changelog_0.3.3.md) · Beta
+
+Safe entry-point bootstrap injection and AST import inspection.
+
 ### [`0.3.2`](changelog_0.3.2.md) · Beta
 
 Transitive dependencies across Git, local, and PyPI sources, and the
@@ -22,7 +26,8 @@ Transitive dependencies across Git, local, and PyPI sources, and the
 
 | Version | Date | Main focus | Notes |
 | --- | --- | --- | --- |
-| [`0.3.2`](changelog_0.3.2.md) | — | Nested dependencies and entry-point bootstrap | Current |
+| [`0.3.3`](changelog_0.3.3.md) | 2026-10-26 | Safe bootstrap injection and AST import inspection | Current |
+| [`0.3.2`](changelog_0.3.2.md) | 2026-10-26 | Nested dependencies and entry-point bootstrap | Beta |
 | [`0.3.1`](changelog_0.3.1.md) | 2026-10-24 | Test runner and configuration safety | Beta |
 | [`0.3.0`](changelog_0.3.0.md) | 2026-10-24 | Resolver backtracking and transactions | Beta |
 | `0.2.9` | — | — | Previous release, not reconstructed |

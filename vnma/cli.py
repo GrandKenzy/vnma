@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import os
 import re
 import subprocess
 import sys
@@ -137,26 +139,105 @@ def cmd_insert_import(args: argparse.Namespace, context: ProjectContext) -> int:
         print(f"[vnma] Created '{display_name}' with VNMA bootstrap import.")
         return 0
 
-    existing_text = target_path.read_text(encoding="utf-8")
-    if f"{vendor_name}.__bootstrap__" in existing_text or "__bootstrap__" in existing_text:
+    try:
+        raw_bytes = target_path.read_bytes()
+    except OSError as err:
+        print(f"[vnma] Error reading '{display_name}': {err}", file=sys.stderr)
+        return 1
+
+    has_bom = raw_bytes.startswith(b"\xef\xbb\xbf")
+    content_bytes = raw_bytes[3:] if has_bom else raw_bytes
+
+    try:
+        existing_text = content_bytes.decode("utf-8")
+    except UnicodeDecodeError as err:
+        print(f"[vnma] Error: '{display_name}' is not valid UTF-8: {err}", file=sys.stderr)
+        return 1
+
+    try:
+        compile(existing_text, str(target_path), "exec")
+        tree = ast.parse(existing_text, filename=str(target_path))
+    except SyntaxError as err:
+        print(f"[vnma] Error: Syntax error in '{display_name}': {err}", file=sys.stderr)
+        return 1
+
+    bootstrap_present = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name == f"{vendor_name}.__bootstrap__" for alias in node.names):
+                bootstrap_present = True
+                break
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module == vendor_name and any(a.name == "__bootstrap__" for a in node.names)) or (
+                node.module == f"{vendor_name}.__bootstrap__"
+            ):
+                bootstrap_present = True
+                break
+
+    if bootstrap_present:
         print(f"[vnma] Bootstrap import already present in '{display_name}'.")
         return 0
 
+    newline = "\r\n" if b"\r\n" in raw_bytes else "\n"
     lines = existing_text.splitlines(keepends=True)
-    insert_idx = 0
 
-    if lines and lines[0].startswith("#!"):
-        insert_idx = 1
+    min_header_idx = 0
+    if len(lines) > 0 and lines[0].startswith("#!"):
+        min_header_idx = 1
         if len(lines) > 1 and re.search(r"coding[:=]\s*([-\w.]+)", lines[1]):
-            insert_idx = 2
-    elif lines and re.search(r"coding[:=]\s*([-\w.]+)", lines[0]):
-        insert_idx = 1
+            min_header_idx = 2
+    elif len(lines) > 0 and re.search(r"coding[:=]\s*([-\w.]+)", lines[0]):
+        min_header_idx = 1
 
-    lines.insert(insert_idx, f"{bootstrap_line}\n")
-    target_path.write_text("".join(lines), encoding="utf-8")
+    future_imports = [
+        node for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__"
+    ]
+
+    if future_imports:
+        last_future = max(future_imports, key=lambda n: n.end_lineno or 0)
+        insert_idx = max(min_header_idx, last_future.end_lineno or len(lines))
+    elif (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+        and isinstance(tree.body[0].value.value, str)
+    ):
+        insert_idx = max(min_header_idx, tree.body[0].end_lineno or len(lines))
+    elif tree.body:
+        insert_idx = max(min_header_idx, (tree.body[0].lineno or 1) - 1)
+    else:
+        insert_idx = len(lines)
+
+    if insert_idx > 0 and insert_idx <= len(lines):
+        if not lines[insert_idx - 1].endswith(("\n", "\r")):
+            lines[insert_idx - 1] += newline
+
+    lines.insert(insert_idx, f"{bootstrap_line}{newline}")
+    new_text = "".join(lines)
+
+    try:
+        compile(new_text, str(target_path), "exec")
+    except SyntaxError as err:
+        print(f"[vnma] Error: Insertion produced invalid syntax in '{display_name}': {err}", file=sys.stderr)
+        return 1
+
+    new_bytes = (b"\xef\xbb\xbf" if has_bom else b"") + new_text.encode("utf-8")
+    temp_path = target_path.with_name(f"{target_path.name}.tmp.{os.getpid()}")
+    try:
+        temp_path.write_bytes(new_bytes)
+        temp_path.replace(target_path)
+    except Exception as err:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        print(f"[vnma] Error writing to '{display_name}': {err}", file=sys.stderr)
+        return 1
+
     print(f"[vnma] Inserted bootstrap import into '{display_name}'.")
     return 0
-
 
 @atomic_workspace_command
 def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:

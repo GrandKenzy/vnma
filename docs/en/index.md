@@ -1,6 +1,6 @@
 # VNMA Documentation
 
-> **Version:** `0.3.2` (Beta)
+> **Version:** `0.3.3` (Beta)
 > **Runtime:** CPython 3.11+ · Windows and Linux
 
 Welcome to the official English documentation for **VNMA**, a dependency and

@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+import vnma
 from vnma.core.models import WheelRelease, normalize_package_name
 
 
@@ -15,9 +16,9 @@ class PyPIClient:
 
     BASE_URL = "https://pypi.org/pypi"
 
-    def __init__(self, user_agent: str = "vnma/0.3.1") -> None:
+    def __init__(self, user_agent: str | None = None) -> None:
         """Initialize client with customized user-agent headers."""
-        self._user_agent = user_agent
+        self._user_agent = user_agent or f"vnma/{vnma.__version__}"
 
     def fetch_package_data(self, package_name: str, version: str | None = None) -> dict[str, Any]:
         """Retrieve raw package metadata from PyPI JSON endpoint."""
