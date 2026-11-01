@@ -41,3 +41,6 @@ test.py
 *.log
 .pytest_cache/
 .coverage
+
+# AI documentation and skills
+vnma_skills.md

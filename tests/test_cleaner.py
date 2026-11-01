@@ -54,7 +54,7 @@ class TestWorkspaceCleaner(unittest.TestCase):
             self.assertFalse((base / "vnma.toml").exists())
             self.assertFalse(vscode_dir.exists())
             self.assertFalse((base / ".env").exists())
-            self.assertFalse((base / ".gitignore").exists())
+            self.assertTrue((base / ".gitignore").exists())
             self.assertTrue(main_py.is_file())
             self.assertEqual(main_py.read_text(encoding="utf-8"), "print('hello')\n")
 
@@ -105,7 +105,6 @@ class TestWorkspaceCleaner(unittest.TestCase):
 
             git_content = (base / ".gitignore").read_text(encoding="utf-8")
             self.assertIn("*.log", git_content)
-            self.assertNotIn("VNMA", git_content)
 
 
 class TestCliUninstallWorkspace(unittest.TestCase):

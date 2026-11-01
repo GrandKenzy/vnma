@@ -17,10 +17,10 @@ class GitignoreVisitor(ProjectVisitor):
     """Ensures vendor artifact directories are properly ignored by Git."""
 
     MARKER_HEADER = "# --- VNMA (Vendor Manager) ---"
-    ENTRIES = ["/vendor/", "/vendor_vnma/", ".vnma_meta/", "vnma_cache/"]
+    ENTRIES = ["/vendor/", "/vendor_vnma/", ".vnma_meta/", "vnma_cache/", "vnma_skills.md"]
 
     def visit_project(self, context: ProjectContext) -> bool:
-        """Inspect and update project .gitignore idempotently."""
+        """Inspect and update project .gitignore idempotently, appending to bottom."""
         gitignore_path = context.gitignore_path
 
         if not gitignore_path.exists():
@@ -41,8 +41,9 @@ class GitignoreVisitor(ProjectVisitor):
         if not missing_entries:
             return False
 
+        # Strictly append missing entries to the bottom without overwriting existing rules
         new_content = original_text
-        if not new_content.endswith("\n"):
+        if new_content and not new_content.endswith("\n"):
             new_content += "\n"
 
         if self.MARKER_HEADER not in original_text:

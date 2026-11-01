@@ -868,70 +868,101 @@ def cmd_run(args: argparse.Namespace, context: ProjectContext) -> int:
     return runner.run_script(script_path, extra_args)
 
 
-def _resolve_test_target(target: str, root: Path, test_roots: list[Path]) -> str:
-    """Resolve a user-specified test target (folder name, file, or pattern) to a project-relative path."""
-    resolved_root = root.resolve()
-    target_path = Path(target)
+def _resolve_test_targets(target: str, root: Path, test_roots: list[Path]) -> list[str]:
+    """Resolve a user-specified test target (folder name, file, or pattern) to project-relative paths.
 
-    # Direct relative path safely contained within project root
-    if not target_path.is_absolute():
-        direct = (root / target_path).resolve()
-        if direct.exists() and direct.is_relative_to(resolved_root):
-            try:
-                rel = direct.relative_to(resolved_root)
-                return str(rel).replace("\\", "/")
-            except ValueError:
-                pass
+    Search priority:
+    1. Search inside all discovered test roots (tests/, test/, testing/) first so users can specify
+       internal suites directly. If matching folders/files exist in multiple test roots (e.g. both
+       'tests/unit' and 'test/unit'), all matches are returned.
+    2. Fall back to project-relative paths only if no match was found inside any test root.
+    """
+    resolved_root = root.resolve()
+    target_clean = target.strip().replace("\\", "/")
+
+    # Guard against path traversal escaping project boundary
+    if ".." in target_clean.split("/"):
+        return [target]
 
     if "::" in target:
         subpath, sep, selector = target.partition("::")
-        resolved_sub = _resolve_test_target(subpath, root, test_roots)
-        return f"{resolved_sub}{sep}{selector}"
-
-    # Guard against path traversal escaping project boundary
-    if ".." in target.replace("\\", "/").split("/"):
-        return target
+        resolved_subs = _resolve_test_targets(subpath, root, test_roots)
+        return [f"{s}{sep}{selector}" for s in resolved_subs]
 
     has_glob_chars = any(ch in target for ch in ("*", "?", "[", "]"))
+    found_matches: list[str] = []
 
+    # 1. PRIORITY: Search across all discovered test directories (tests/, test/, testing/)
     for test_root in test_roots:
         resolved_tr = test_root.resolve()
         if not resolved_tr.is_relative_to(resolved_root):
             continue
         rel_test_root = test_root.relative_to(root).as_posix()
 
+        # If target already includes the test_root prefix (e.g. 'tests/unit' or 'test/unit')
+        if target_clean == rel_test_root or target_clean.startswith(f"{rel_test_root}/"):
+            cand = (root / target_clean).resolve()
+            if cand.exists() and cand.is_relative_to(resolved_root):
+                found_matches.append(target_clean)
+                continue
+
+        # Subdirectory or file directly inside test_root (e.g. 'unit' -> 'tests/unit' / 'test/unit')
         cand = (test_root / target).resolve()
         if cand.exists() and cand.is_relative_to(resolved_root):
-            return f"{rel_test_root}/{target}"
+            found_matches.append(f"{rel_test_root}/{target}")
+            continue
 
         cand_py = (test_root / f"{target}.py").resolve()
         if cand_py.is_file() and cand_py.is_relative_to(resolved_root):
-            return f"{rel_test_root}/{target}.py"
+            found_matches.append(f"{rel_test_root}/{target}.py")
+            continue
 
         cand_test_py = (test_root / f"test_{target}.py").resolve()
         if cand_test_py.is_file() and cand_test_py.is_relative_to(resolved_root):
-            return f"{rel_test_root}/test_{target}.py"
+            found_matches.append(f"{rel_test_root}/test_{target}.py")
+            continue
 
         cand_test_dir = (test_root / f"test_{target}").resolve()
         if cand_test_dir.is_dir() and cand_test_dir.is_relative_to(resolved_root):
-            return f"{rel_test_root}/test_{target}"
+            found_matches.append(f"{rel_test_root}/test_{target}")
+            continue
 
+        # Case-insensitive direct child
+        found_child = False
         if test_root.is_dir():
             for child in test_root.iterdir():
-                if child.is_dir() and child.name.lower() == target.lower():
-                    return f"{rel_test_root}/{child.name}"
+                if child.name.lower() == target.lower():
+                    found_matches.append(f"{rel_test_root}/{child.name}")
+                    found_child = True
+                    break
+        if found_child:
+            continue
 
         if not has_glob_chars and test_root.is_dir():
             for child in test_root.glob(f"**/{target}"):
                 if child.is_dir() and child.resolve().is_relative_to(resolved_root):
-                    return child.relative_to(root).as_posix()
+                    found_matches.append(child.relative_to(root).as_posix())
 
             for pat in (f"**/{target}.py", f"**/test_{target}.py"):
                 matches = [m for m in test_root.glob(pat) if m.resolve().is_relative_to(resolved_root)]
                 if matches:
-                    return matches[0].relative_to(root).as_posix()
+                    found_matches.append(matches[0].relative_to(root).as_posix())
 
-    return target
+    if found_matches:
+        return sorted(list(dict.fromkeys(found_matches)))
+
+    # 2. FALLBACK: Direct project-relative path if not located inside any test root
+    target_path = Path(target)
+    if not target_path.is_absolute():
+        direct = (root / target_path).resolve()
+        if direct.exists() and direct.is_relative_to(resolved_root):
+            try:
+                rel = direct.relative_to(resolved_root)
+                return [str(rel).replace("\\", "/")]
+            except ValueError:
+                pass
+
+    return [target]
 
 
 def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
@@ -979,14 +1010,18 @@ def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
     test_roots = [root / cand for cand in candidates if (root / cand).is_dir()]
 
     if positionals:
-        resolved_targets = [_resolve_test_target(p, root, test_roots) for p in positionals]
-        for raw_p, resolved in zip(positionals, resolved_targets):
-            check_path = resolved.partition("::")[0]
-            if not (root / check_path).exists():
-                print(f"[vnma] Error: Test suite or file '{raw_p}' not found in project.")
-                return 1
+        resolved_targets = []
+        for p in positionals:
+            subs = _resolve_test_targets(p, root, test_roots)
+            for s in subs:
+                check_path = s.partition("::")[0]
+                if not (root / check_path).exists():
+                    print(f"[vnma] Error: Test suite or file '{p}' not found in project.")
+                    return 1
+                resolved_targets.append(s)
+        resolved_targets = sorted(list(dict.fromkeys(resolved_targets)))
     elif test_roots:
-        resolved_targets = [test_roots[0].name]
+        resolved_targets = [tr.relative_to(root).as_posix() for tr in test_roots]
     else:
         resolved_targets = []
 
@@ -1023,6 +1058,11 @@ def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
         print("[vnma] Note: 'pytest' not found in vendor or Python environment.")
         print("[vnma] Hint: Run 'vnma install pytest' for pytest features.")
 
+        test_env_overrides = {
+            "VNMA_HERMETIC": "0",
+            "PYTHONPATH": f"{str(root)}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(os.pathsep),
+        }
+
         if len(resolved_targets) == 1:
             single_target = resolved_targets[0]
             target_path = root / single_target
@@ -1030,8 +1070,8 @@ def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
             if target_path.is_file():
                 unittest_args = [*flags, single_target]
             else:
-                unittest_args = ["discover", "-s", single_target, "-t", ".", *flags]
-            return runner.run_module("unittest", unittest_args, env_overrides={"VNMA_HERMETIC": "0"})
+                unittest_args = ["discover", "-s", single_target, *flags]
+            return runner.run_module("unittest", unittest_args, env_overrides=test_env_overrides)
 
         overall_exit_code = 0
         for target in resolved_targets:
@@ -1040,8 +1080,8 @@ def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
             if target_path.is_file():
                 u_args = [*flags, target]
             else:
-                u_args = ["discover", "-s", target, "-t", ".", *flags]
-            exit_code = runner.run_module("unittest", u_args, env_overrides={"VNMA_HERMETIC": "0"})
+                u_args = ["discover", "-s", target, *flags]
+            exit_code = runner.run_module("unittest", u_args, env_overrides=test_env_overrides)
             if exit_code != 0:
                 overall_exit_code = exit_code
 

@@ -638,6 +638,28 @@ class TestCliTestCommand(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("No test directory", buf.getvalue())
 
+    def test_cli_test_discovers_both_test_and_tests_folders(self) -> None:
+        """Verify vnma test executes both 'tests' and 'test' folders when both exist."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "tests").mkdir()
+            (root / "tests" / "test_a.py").write_text("x = 1\n", encoding="utf-8")
+            (root / "test").mkdir()
+            (root / "test" / "test_b.py").write_text("y = 2\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                # Must invoke unittest discover on both folders
+                self.assertEqual(mock_run.call_count, 2)
+                called_targets = [str(call[0][1][2]).replace("\\", "/") for call in mock_run.call_args_list]
+                self.assertIn("tests", called_targets)
+                self.assertIn("test", called_targets)
+
     def test_cli_test_subfolder_suite_inside_tests(self) -> None:
         """Verify vnma test resolves a subfolder name inside tests directory."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -656,6 +678,60 @@ class TestCliTestCommand(unittest.TestCase):
                 mock_run.assert_called_once()
                 runner_args = mock_run.call_args[0][1]
                 self.assertTrue(any("tests/unit" in str(a).replace("\\", "/") for a in runner_args))
+
+    def test_cli_test_prioritizes_inside_tests_folder_over_root_folder(self) -> None:
+        """Verify vnma test resolves to tests/<folder> even when a root <folder> exists."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            # Create a source folder 'auth' in the project root
+            (root / "auth").mkdir()
+            (root / "auth" / "service.py").write_text("x = 1\n", encoding="utf-8")
+
+            # Create test folder 'tests/auth'
+            test_auth_dir = root / "tests" / "auth"
+            test_auth_dir.mkdir(parents=True)
+            (test_auth_dir / "test_auth.py").write_text("y = 2\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "auth"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                mock_run.assert_called_once()
+                runner_args = mock_run.call_args[0][1]
+                # Must resolve to 'tests/auth', NEVER the root 'auth'
+                self.assertTrue(any("tests/auth" in str(a).replace("\\", "/") for a in runner_args))
+                self.assertFalse(any(str(a).replace("\\", "/") == "auth" for a in runner_args))
+
+    def test_cli_test_runs_unittest_on_non_package_test_subdirectory(self) -> None:
+        """Verify unittest discovery succeeds on non-package test subfolders without __init__.py."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            # Source file in root
+            (root / "calc.py").write_text("def multiply(a, b): return a * b\n", encoding="utf-8")
+
+            # tests/math folder without any __init__.py
+            math_dir = root / "tests" / "math"
+            math_dir.mkdir(parents=True)
+            (math_dir / "test_calc.py").write_text(
+                "import unittest\nfrom calc import multiply\n"
+                "class TestCalc(unittest.TestCase):\n"
+                "    def test_mult(self): self.assertEqual(multiply(3, 4), 12)\n",
+                encoding="utf-8",
+            )
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "math"])
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = args.handler(args, context)
+
+            self.assertEqual(code, 0)
+            self.assertIn("Running tests using standard library unittest in 'tests/math'", buf.getvalue())
 
     def test_cli_test_named_file_inside_tests(self) -> None:
         """Verify vnma test resolves target file/name inside tests directory."""

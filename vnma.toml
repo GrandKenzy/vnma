@@ -1,6 +1,6 @@
 [project]
 name = "vnma"
-version = "1.0.0"
+version = "1.0.1"
 
 [dependencies]
 colorama = "==0.4.6"

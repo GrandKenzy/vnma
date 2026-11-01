@@ -182,36 +182,9 @@ class WorkspaceCleaner:
         return actions
 
     def _clean_gitignore(self) -> list[str]:
-        """Remove VNMA ignore markers and vendor directory entries from .gitignore."""
-        actions: list[str] = []
-        gitignore_file = self._context.gitignore_path
-        if not gitignore_file.is_file():
-            return actions
-
-        try:
-            lines = gitignore_file.read_text(encoding="utf-8", errors="replace").splitlines()
-            ignored_tokens = set(GitignoreVisitor.ENTRIES) | {"/vendor/", "/vendor_vnma/", ".vnma_meta/", "vnma_cache/", "vendor/", "vendor_vnma/"}
-            kept_lines: list[str] = []
-
-            for line in lines:
-                stripped = line.strip()
-                if stripped == GitignoreVisitor.MARKER_HEADER:
-                    continue
-                if stripped in ignored_tokens or stripped.strip("/") in [t.strip("/") for t in ignored_tokens]:
-                    continue
-                kept_lines.append(line)
-
-            remaining_content = "\n".join(kept_lines).strip()
-            if not remaining_content:
-                gitignore_file.unlink(missing_ok=True)
-                actions.append("Removed '.gitignore'")
-            elif len(kept_lines) != len(lines):
-                gitignore_file.write_text(remaining_content + "\n", encoding="utf-8")
-                actions.append("Cleaned VNMA entries from '.gitignore'")
-        except Exception:
-            pass
-
-        return actions
+        """Preserve .gitignore intact during uninstalls to prevent accidental loss of user or project ignore rules."""
+        # Never delete or destructively strip .gitignore; preserve user rules intact
+        return []
 
     def _is_vnma_path(self, path_str: str) -> bool:
         """Check if an IDE path string references VNMA vendor roots or linked user home paths."""
