@@ -638,6 +638,134 @@ class TestCliTestCommand(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("No test directory", buf.getvalue())
 
+    def test_cli_test_subfolder_suite_inside_tests(self) -> None:
+        """Verify vnma test resolves a subfolder name inside tests directory."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            unit_dir = root / "tests" / "unit"
+            unit_dir.mkdir(parents=True)
+            (unit_dir / "test_one.py").write_text("x = 1\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "unit"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                mock_run.assert_called_once()
+                runner_args = mock_run.call_args[0][1]
+                self.assertTrue(any("tests/unit" in str(a).replace("\\", "/") for a in runner_args))
+
+    def test_cli_test_named_file_inside_tests(self) -> None:
+        """Verify vnma test resolves target file/name inside tests directory."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            tests_dir = root / "tests"
+            tests_dir.mkdir()
+            (tests_dir / "test_sample.py").write_text("x = 1\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "sample"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                mock_run.assert_called_once()
+                runner_args = mock_run.call_args[0][1]
+                self.assertTrue(any("tests/test_sample.py" in str(a).replace("\\", "/") for a in runner_args))
+
+    def test_cli_test_multiple_suite_targets(self) -> None:
+        """Verify vnma test can execute multiple suite folders sequentially."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "tests" / "unit").mkdir(parents=True)
+            (root / "tests" / "e2e").mkdir(parents=True)
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "unit", "e2e"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                # If unittest is used, it runs each suite directory
+                self.assertEqual(mock_run.call_count, 2)
+
+    def test_cli_test_safe_against_path_traversal_and_absolute_paths(self) -> None:
+        """Verify vnma test safely returns 1 with clear message when targets do not exist."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "tests").mkdir()
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "../outside"])
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = args.handler(args, context)
+            self.assertEqual(code, 1)
+            self.assertIn("not found in project", buf.getvalue())
+
+    def test_cli_test_flag_with_argument_preserves_target(self) -> None:
+        """Verify flags with values (e.g. -k pattern) do not get treated as test targets."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            unit_dir = root / "tests" / "unit"
+            unit_dir.mkdir(parents=True)
+            (unit_dir / "test_one.py").write_text("x = 1\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "unit", "-k", "test_filter"])
+
+            with patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0]
+                runner_argv = call_args[1]
+                self.assertIn("-k", runner_argv)
+                self.assertIn("test_filter", runner_argv)
+                # Ensure only one test target is resolved
+                self.assertTrue(any("tests/unit" in str(a).replace("\\", "/") for a in runner_argv))
+
+    def test_cli_test_invokes_pytest_when_available(self) -> None:
+        """Verify vnma test delegates to pytest when installed."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            unit_dir = root / "tests" / "unit"
+            unit_dir.mkdir(parents=True)
+            (unit_dir / "test_one.py").write_text("x = 1\n", encoding="utf-8")
+
+            context = ProjectContext(start_path=root)
+            parser = build_parser()
+            args = parser.parse_args(["test", "unit", "-v"])
+
+            # Mock subprocess check for import pytest to return code 0
+            with patch("subprocess.run") as mock_subproc,                  patch("vnma.runtime.runner.ScriptRunner.run_module", return_value=0) as mock_run:
+                mock_subproc.return_value.returncode = 0
+                code = args.handler(args, context)
+                self.assertEqual(code, 0)
+                mock_run.assert_called_once()
+                self.assertEqual(mock_run.call_args[0][0], "pytest")
+                self.assertIn("tests/unit", [str(a).replace("\\", "/") for a in mock_run.call_args[0][1]])
+                self.assertIn("-v", mock_run.call_args[0][1])
+
+    def test_git_cloner_rejects_flag_injection(self) -> None:
+        """Verify GitCloner raises GitCloneError when URL or ref starts with a dash."""
+        from vnma.pypi.git import GitCloner, GitCloneError
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cloner = GitCloner(cache_dir=Path(tmp_dir))
+            with self.assertRaises(GitCloneError):
+                cloner.fetch_repository("--upload-pack=touch /tmp/pwn")
+
+            with self.assertRaises(GitCloneError):
+                cloner.fetch_repository("https://github.com/example/repo.git", git_ref="--help")
+
 
 
 class TestCliInsertImport(unittest.TestCase):

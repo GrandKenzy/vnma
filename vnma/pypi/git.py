@@ -44,19 +44,24 @@ class GitCloner:
 
     def fetch_repository(self, git_url: str, git_ref: str = "main") -> Path:
         """Clone or update target git reference into cached workspace."""
+        clean_url = git_url.strip()
+        clean_ref = git_ref.strip()
+        if clean_url.startswith("-") or clean_ref.startswith("-"):
+            raise GitCloneError(f"Security: Malformed or flag-injected git URL or ref: '{git_url}'")
+
         hasher = hashlib.sha256()
-        hasher.update(git_url.strip().encode("utf-8"))
-        hasher.update(git_ref.strip().encode("utf-8"))
+        hasher.update(clean_url.encode("utf-8"))
+        hasher.update(clean_ref.encode("utf-8"))
         repo_hash = hasher.hexdigest()[:16]
 
         repo_dir = self._cache_dir / repo_hash
 
         if (repo_dir / ".git").is_dir():
-            fetch_cmd = ["git", "fetch", "--depth", "1", "origin", git_ref]
+            fetch_cmd = ["git", "fetch", "--depth", "1", "origin", clean_ref]
             res = subprocess.run(fetch_cmd, cwd=str(repo_dir), capture_output=True, text=True)
             if res.returncode == 0:
                 subprocess.run(
-                    ["git", "checkout", "-B", git_ref, "FETCH_HEAD"],
+                    ["git", "checkout", "-B", clean_ref, "FETCH_HEAD"],
                     cwd=str(repo_dir),
                     capture_output=True,
                 )
@@ -75,14 +80,15 @@ class GitCloner:
             "--depth",
             "1",
             "--branch",
-            git_ref,
-            git_url,
+            clean_ref,
+            "--",
+            clean_url,
             str(repo_dir),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             self._safe_rmtree(repo_dir)
-            fallback_cmd = ["git", "clone", git_url, str(repo_dir)]
+            fallback_cmd = ["git", "clone", "--", clean_url, str(repo_dir)]
             fallback_res = subprocess.run(fallback_cmd, capture_output=True, text=True)
             if fallback_res.returncode != 0:
                 raise GitCloneError(

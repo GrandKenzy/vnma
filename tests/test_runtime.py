@@ -95,6 +95,23 @@ class TestScriptRunnerIsolation(unittest.TestCase):
                 else:
                     os.environ.pop("VNMA_HERMETIC", None)
 
+    def test_exec_binary_blocks_path_traversal(self) -> None:
+        """Verify exec_binary raises FileNotFoundError on path traversal attempts."""
+        from vnma.core.context import ProjectContext
+        from vnma.runtime.runner import ScriptRunner
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            ctx = ProjectContext(start_path=root)
+            ctx.ensure_directories()
+            runner = ScriptRunner(ctx)
+
+            with self.assertRaises(FileNotFoundError):
+                runner.exec_binary("../outside_binary")
+
+            with self.assertRaises(FileNotFoundError):
+                runner.exec_binary("..\\outside_binary")
+
 
 class TestEntryPointResolver(unittest.TestCase):
     """Test resolution of entrypoint scripts, directories, and defaults."""

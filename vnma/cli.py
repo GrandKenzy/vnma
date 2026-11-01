@@ -868,6 +868,72 @@ def cmd_run(args: argparse.Namespace, context: ProjectContext) -> int:
     return runner.run_script(script_path, extra_args)
 
 
+def _resolve_test_target(target: str, root: Path, test_roots: list[Path]) -> str:
+    """Resolve a user-specified test target (folder name, file, or pattern) to a project-relative path."""
+    resolved_root = root.resolve()
+    target_path = Path(target)
+
+    # Direct relative path safely contained within project root
+    if not target_path.is_absolute():
+        direct = (root / target_path).resolve()
+        if direct.exists() and direct.is_relative_to(resolved_root):
+            try:
+                rel = direct.relative_to(resolved_root)
+                return str(rel).replace("\\", "/")
+            except ValueError:
+                pass
+
+    if "::" in target:
+        subpath, sep, selector = target.partition("::")
+        resolved_sub = _resolve_test_target(subpath, root, test_roots)
+        return f"{resolved_sub}{sep}{selector}"
+
+    # Guard against path traversal escaping project boundary
+    if ".." in target.replace("\\", "/").split("/"):
+        return target
+
+    has_glob_chars = any(ch in target for ch in ("*", "?", "[", "]"))
+
+    for test_root in test_roots:
+        resolved_tr = test_root.resolve()
+        if not resolved_tr.is_relative_to(resolved_root):
+            continue
+        rel_test_root = test_root.relative_to(root).as_posix()
+
+        cand = (test_root / target).resolve()
+        if cand.exists() and cand.is_relative_to(resolved_root):
+            return f"{rel_test_root}/{target}"
+
+        cand_py = (test_root / f"{target}.py").resolve()
+        if cand_py.is_file() and cand_py.is_relative_to(resolved_root):
+            return f"{rel_test_root}/{target}.py"
+
+        cand_test_py = (test_root / f"test_{target}.py").resolve()
+        if cand_test_py.is_file() and cand_test_py.is_relative_to(resolved_root):
+            return f"{rel_test_root}/test_{target}.py"
+
+        cand_test_dir = (test_root / f"test_{target}").resolve()
+        if cand_test_dir.is_dir() and cand_test_dir.is_relative_to(resolved_root):
+            return f"{rel_test_root}/test_{target}"
+
+        if test_root.is_dir():
+            for child in test_root.iterdir():
+                if child.is_dir() and child.name.lower() == target.lower():
+                    return f"{rel_test_root}/{child.name}"
+
+        if not has_glob_chars and test_root.is_dir():
+            for child in test_root.glob(f"**/{target}"):
+                if child.is_dir() and child.resolve().is_relative_to(resolved_root):
+                    return child.relative_to(root).as_posix()
+
+            for pat in (f"**/{target}.py", f"**/test_{target}.py"):
+                matches = [m for m in test_root.glob(pat) if m.resolve().is_relative_to(resolved_root)]
+                if matches:
+                    return matches[0].relative_to(root).as_posix()
+
+    return target
+
+
 def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
     """Run project tests with pytest or unittest using the vendored environment."""
     manager = LinkManager(context)
@@ -885,27 +951,44 @@ def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
         all_tokens.append(raw_target)
     all_tokens.extend(raw_args)
 
+    FLAGS_WITH_ARGS = {
+        "-k", "-m", "-o", "-c", "-p", "-r", "-W", "-s", "-t",
+        "--tb", "--color", "--capture", "--import-mode", "--durations",
+        "--maxfail", "--junitxml", "--log-level", "--override-ini", "--rootdir",
+    }
+
     flags: list[str] = []
     positionals: list[str] = []
-    for token in all_tokens:
+    i = 0
+    while i < len(all_tokens):
+        token = all_tokens[i]
         if token.startswith("-"):
+            flag_name = token.split("=")[0]
+            if "=" not in token and flag_name in FLAGS_WITH_ARGS and (i + 1) < len(all_tokens):
+                flags.append(token)
+                flags.append(all_tokens[i + 1])
+                i += 2
+                continue
             flags.append(token)
+            i += 1
         else:
             positionals.append(token)
+            i += 1
 
-    explicit_target = positionals[0] if positionals else None
-    remaining_positionals = positionals[1:] if positionals else []
+    candidates = ["tests", "test", "testing"]
+    test_roots = [root / cand for cand in candidates if (root / cand).is_dir()]
 
-    discovered_target: str | None = None
-    if explicit_target:
-        discovered_target = explicit_target
+    if positionals:
+        resolved_targets = [_resolve_test_target(p, root, test_roots) for p in positionals]
+        for raw_p, resolved in zip(positionals, resolved_targets):
+            check_path = resolved.partition("::")[0]
+            if not (root / check_path).exists():
+                print(f"[vnma] Error: Test suite or file '{raw_p}' not found in project.")
+                return 1
+    elif test_roots:
+        resolved_targets = [test_roots[0].name]
     else:
-        candidates = ["tests", "test", "testing"]
-        for cand in candidates:
-            cand_path = root / cand
-            if cand_path.is_dir():
-                discovered_target = cand
-                break
+        resolved_targets = []
 
     runner = ScriptRunner(context)
     env = runner._build_vendor_env()
@@ -925,28 +1008,44 @@ def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
         has_pytest = False
 
     if has_pytest:
-        pytest_args = []
-        if discovered_target:
-            pytest_args.append(str(discovered_target))
-        pytest_args.extend(remaining_positionals)
-        pytest_args.extend(flags)
-        print("[vnma] Running tests with pytest in vendored environment...")
-        return runner.run_module("pytest", pytest_args, env_overrides={"VNMA_HERMETIC": "0"})
-    else:
-        if not discovered_target:
+        if not resolved_targets:
             print("[vnma] No test directory specified and neither 'tests/' nor 'test/' was found in project.")
             return 1
 
-        target_path = root / discovered_target
+        pytest_args = [*resolved_targets, *flags]
+        print("[vnma] Running tests with pytest in vendored environment...")
+        return runner.run_module("pytest", pytest_args, env_overrides={"VNMA_HERMETIC": "0"})
+    else:
+        if not resolved_targets:
+            print("[vnma] No test directory specified and neither 'tests/' nor 'test/' was found in project.")
+            return 1
+
         print("[vnma] Note: 'pytest' not found in vendor or Python environment.")
         print("[vnma] Hint: Run 'vnma install pytest' for pytest features.")
-        print(f"[vnma] Running tests using standard library unittest in '{discovered_target}'...")
 
-        if target_path.is_file():
-            unittest_args = [*flags, str(discovered_target), *remaining_positionals]
-        else:
-            unittest_args = ["discover", "-s", str(discovered_target), *flags, *remaining_positionals]
-        return runner.run_module("unittest", unittest_args, env_overrides={"VNMA_HERMETIC": "0"})
+        if len(resolved_targets) == 1:
+            single_target = resolved_targets[0]
+            target_path = root / single_target
+            print(f"[vnma] Running tests using standard library unittest in '{single_target}'...")
+            if target_path.is_file():
+                unittest_args = [*flags, single_target]
+            else:
+                unittest_args = ["discover", "-s", single_target, "-t", ".", *flags]
+            return runner.run_module("unittest", unittest_args, env_overrides={"VNMA_HERMETIC": "0"})
+
+        overall_exit_code = 0
+        for target in resolved_targets:
+            target_path = root / target
+            print(f"[vnma] Running tests using standard library unittest in '{target}'...")
+            if target_path.is_file():
+                u_args = [*flags, target]
+            else:
+                u_args = ["discover", "-s", target, "-t", ".", *flags]
+            exit_code = runner.run_module("unittest", u_args, env_overrides={"VNMA_HERMETIC": "0"})
+            if exit_code != 0:
+                overall_exit_code = exit_code
+
+        return overall_exit_code
 
 
 @atomic_workspace_command
@@ -1054,6 +1153,14 @@ def cmd_exec(args: argparse.Namespace, context: ProjectContext) -> int:
     except FileNotFoundError as err:
         print(f"[vnma] Error: {err}")
         return 1
+
+
+def cmd_tools(args: argparse.Namespace, context: ProjectContext) -> int:
+    """Run developer tools and workspace utilities."""
+    from vnma.tools import run_tool
+    raw_tool = getattr(args, "tool", None)
+    tool_args = list(getattr(args, "tool_args", []))
+    return run_tool(raw_tool, tool_args, context.project_root)
 
 
 def cmd_check(args: argparse.Namespace, context: ProjectContext) -> int:
@@ -1300,6 +1407,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     test_parser.set_defaults(handler=cmd_test)
 
+    tools_parser = subparsers.add_parser(
+        "tools",
+        help="Workspace developer utilities and maintenance tools (bigfiles, cacheclean, search)",
+    )
+    tools_parser.add_argument(
+        "tool",
+        nargs="?",
+        default=None,
+        help="Tool to execute: bigfiles, cacheclean, search",
+    )
+    tools_parser.add_argument(
+        "tool_args",
+        nargs=argparse.REMAINDER,
+        help="Arguments and options passed to the tool",
+    )
+    tools_parser.set_defaults(handler=cmd_tools)
 
     return parser
 
@@ -1307,7 +1430,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """CLI application entrypoint."""
     args_list = sys.argv[1:] if argv is None else list(argv)
-    if len(args_list) > 1 and args_list[0] in ("run", "test"):
+    if len(args_list) > 1 and args_list[0] in ("run", "test", "tools"):
         if args_list[1].startswith("-") and args_list[1] not in ("-h", "--help"):
             args_list.insert(1, "--")
 

@@ -132,15 +132,21 @@ class ScriptRunner:
 
     def exec_binary(self, binary_name: str, args: Sequence[str] = ()) -> int:
         """Execute a CLI tool installed in the vendor .bin directory."""
-        bin_dir = self._context.bin_path
+        bin_dir = self._context.bin_path.resolve()
+        sanitized_name = Path(binary_name).name
+        if not sanitized_name or sanitized_name != binary_name:
+            raise FileNotFoundError(
+                f"Binary '{binary_name}' is invalid or attempts path traversal."
+            )
+
         candidates = (
-            [bin_dir / f"{binary_name}.cmd", bin_dir / f"{binary_name}.bat", bin_dir / binary_name]
+            [bin_dir / f"{sanitized_name}.cmd", bin_dir / f"{sanitized_name}.bat", bin_dir / sanitized_name]
             if sys.platform == "win32"
-            else [bin_dir / binary_name, bin_dir / f"{binary_name}.cmd"]
+            else [bin_dir / sanitized_name, bin_dir / f"{sanitized_name}.cmd"]
         )
 
         target_bin = next((c for c in candidates if c.is_file()), None)
-        if not target_bin:
+        if not target_bin or not target_bin.resolve().is_relative_to(bin_dir):
             raise FileNotFoundError(
                 f"Binary '{binary_name}' not found in {bin_dir}. Ensure package is installed."
             )

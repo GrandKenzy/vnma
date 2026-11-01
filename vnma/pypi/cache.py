@@ -8,6 +8,7 @@ import shutil
 import urllib.parse
 import urllib.request
 from pathlib import Path
+import vnma
 
 
 class WheelCache:
@@ -29,23 +30,26 @@ class WheelCache:
 
     def get_wheel_path(self, filename: str) -> Path | None:
         """Retrieve path to cached wheel if present."""
-        target = self._cache_dir / filename
+        clean_name = Path(filename).name
+        target = self._cache_dir / clean_name
         return target if target.is_file() else None
 
     def store_wheel(self, filename: str, source_path: Path) -> Path:
         """Copy local wheel into cache directory."""
-        target = self._cache_dir / filename
+        clean_name = Path(filename).name
+        target = self._cache_dir / clean_name
         shutil.copy2(source_path, target)
         return target
 
     def download_wheel(self, url: str, filename: str, expected_sha256: str | None = None) -> Path:
         """Download remote wheel directly to cache with streaming sha256 calculation."""
-        cached = self.get_wheel_path(filename)
+        clean_name = Path(filename).name
+        cached = self.get_wheel_path(clean_name)
         if cached:
             if not expected_sha256 or self._verify_sha256(cached, expected_sha256):
                 return cached
 
-        temp_target = self._cache_dir / f"{filename}.part"
+        temp_target = self._cache_dir / f"{clean_name}.part"
         hasher = hashlib.sha256()
 
         if url.startswith("file://"):
@@ -64,7 +68,7 @@ class WheelCache:
         else:
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "vnma/0.3.3"},
+                headers={"User-Agent": f"vnma/{vnma.__version__}"},
             )
             with urllib.request.urlopen(req) as response, temp_target.open("wb") as out:
                 while chunk := response.read(65536):
