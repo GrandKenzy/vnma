@@ -18,9 +18,9 @@ class TestVersionConsistency(unittest.TestCase):
         with (repo_root / "vnma.toml").open("rb") as stream:
             project_manifest = tomllib.load(stream)
 
-        self.assertEqual(pyproject["project"]["version"], "1.0.1")
-        self.assertEqual(vnma.__version__, "1.0.1")
-        self.assertEqual(project_manifest["project"]["version"], "1.0.1")
+        self.assertEqual(pyproject["project"]["version"], "1.0.2")
+        self.assertEqual(vnma.__version__, "1.0.2")
+        self.assertEqual(project_manifest["project"]["version"], "1.0.2")
 
     def test_pypi_client_reports_current_version(self) -> None:
         self.assertEqual(PyPIClient()._user_agent, f"vnma/{vnma.__version__}")

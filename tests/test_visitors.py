@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from vnma.core.cleaner import WorkspaceCleaner
 from vnma.core.context import ProjectContext
 from vnma.visitors.artifact_visitors import BinaryDetectorVisitor, ScriptWrapperVisitor
 from vnma.visitors.base import ArtifactElement
@@ -159,6 +160,49 @@ class TestProjectVisitors(unittest.TestCase):
 
             second_run = visitor.visit_project(context)
             self.assertFalse(second_run)
+
+    def test_gitignore_visitor_smart_partial_append_and_cycles(self) -> None:
+        """Verify existing lines remain intact, only missing entries are appended, and install/uninstall cycles do not grow the file."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_dir = Path(tmp_dir)
+            (project_dir / "vnma.toml").write_text('[project]\nname="test"\n', encoding="utf-8")
+            gitignore = project_dir / ".gitignore"
+            initial_user_content = "__pycache__/\n*.pyc\nvendor/ # user comment\n.env\n"
+            gitignore.write_text(initial_user_content, encoding="utf-8")
+
+            context = ProjectContext(start_path=project_dir)
+            visitor = GitignoreVisitor()
+            cleaner = WorkspaceCleaner(context)
+
+            # First visit: 'vendor/' is already present, so only the remaining 4 should be added
+            changed = visitor.visit_project(context)
+            self.assertTrue(changed)
+
+            after_first = gitignore.read_text(encoding="utf-8")
+            self.assertTrue(after_first.startswith(initial_user_content))
+            self.assertNotIn("\n/vendor/\n", after_first)
+            self.assertIn("/vendor_vnma/\n", after_first)
+            self.assertIn(".vnma_meta/\n", after_first)
+            self.assertIn("vnma_cache/\n", after_first)
+            self.assertIn("vnma_skills.md\n", after_first)
+            self.assertEqual(after_first.count(GitignoreVisitor.MARKER_HEADER), 1)
+
+            # Simulate repeated uninstall/install cycles
+            for _ in range(5):
+                cleaner.purge(keep_config=True)
+                self.assertFalse(visitor.visit_project(context))
+
+            self.assertEqual(gitignore.read_text(encoding="utf-8"), after_first)
+
+            # Simulate user deleting a single VNMA entry; only that entry should be re-added without duplicating header
+            modified = after_first.replace("vnma_cache/\n", "")
+            gitignore.write_text(modified, encoding="utf-8")
+
+            self.assertTrue(visitor.visit_project(context))
+            after_repair = gitignore.read_text(encoding="utf-8")
+            self.assertEqual(after_repair.count(GitignoreVisitor.MARKER_HEADER), 1)
+            self.assertEqual(after_repair.count("vnma_cache/"), 1)
+            self.assertTrue(after_repair.endswith("vnma_cache/\n"))
 
 
 if __name__ == "__main__":
