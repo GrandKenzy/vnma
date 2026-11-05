@@ -9,6 +9,7 @@ from pathlib import Path
 
 from vnma.core.cleaner import WorkspaceCleaner
 from vnma.core.context import ProjectContext
+from vnma.core.errors import ArtifactError
 from vnma.visitors.artifact_visitors import BinaryDetectorVisitor, ScriptWrapperVisitor
 from vnma.visitors.base import ArtifactElement
 from vnma.visitors.git_visitors import GitignoreVisitor
@@ -57,6 +58,18 @@ class TestArtifactVisitors(unittest.TestCase):
             self.assertIn("VNMA_VENDOR", cmd)
             self.assertNotIn(str(stage), sh)
             self.assertNotIn(str(stage), cmd)
+            self.assertNotIn(" -c ", sh)
+            self.assertNotIn(" -c ", cmd)
+
+    def test_cli_wrapper_rejects_shell_injection_metadata(self) -> None:
+        """Wheel metadata cannot inject shell syntax into generated launchers."""
+        with tempfile.TemporaryDirectory() as temp:
+            bin_dir = Path(temp) / ".vnma_meta" / ".bin"
+            scripts = ScriptWrapperVisitor(bin_dir, Path(temp))
+            with self.assertRaises(ArtifactError):
+                scripts._generate_executable_wrapper("bad&whoami", "pkg:main")
+            with self.assertRaises(ArtifactError):
+                scripts._generate_executable_wrapper("safe", "pkg:main;__import__('os')")
 
     def test_dll_collision_detection(self) -> None:
         """Verify collision is flagged when two packages extract different DLL versions."""

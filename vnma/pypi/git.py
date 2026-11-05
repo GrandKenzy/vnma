@@ -9,8 +9,11 @@ import stat
 import subprocess
 from pathlib import Path
 
+from vnma.core.timeouts import COMMAND_TIMEOUT_SECONDS
+from vnma.core.errors import VnmaError
 
-class GitCloneError(RuntimeError):
+
+class GitCloneError(VnmaError):
     """Raised when cloning a remote git repository fails."""
 
 
@@ -33,9 +36,13 @@ class GitCloner:
 
         def _handle_readonly(func, path, exc_info):
             try:
-                os.chmod(path, stat.S_IWRITE)
+                path_obj = Path(path)
+                mode = stat.S_IRUSR | stat.S_IWUSR
+                if path_obj.is_dir():
+                    mode |= stat.S_IXUSR
+                os.chmod(path, mode)
                 func(path)
-            except Exception:
+            except OSError:
                 pass
 
         shutil.rmtree(target_dir, onerror=_handle_readonly)
@@ -58,17 +65,15 @@ class GitCloner:
 
         if (repo_dir / ".git").is_dir():
             fetch_cmd = ["git", "fetch", "--depth", "1", "origin", clean_ref]
-            res = subprocess.run(fetch_cmd, cwd=str(repo_dir), capture_output=True, text=True)
+            res = self._run(fetch_cmd, cwd=repo_dir)
             if res.returncode == 0:
-                subprocess.run(
+                self._run(
                     ["git", "checkout", "-B", clean_ref, "FETCH_HEAD"],
-                    cwd=str(repo_dir),
-                    capture_output=True,
+                    cwd=repo_dir,
                 )
-                subprocess.run(
+                self._run(
                     ["git", "clean", "-fdx"],
-                    cwd=str(repo_dir),
-                    capture_output=True,
+                    cwd=repo_dir,
                 )
                 return repo_dir
 
@@ -85,16 +90,32 @@ class GitCloner:
             clean_url,
             str(repo_dir),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = self._run(cmd)
         if result.returncode != 0:
             self._safe_rmtree(repo_dir)
             fallback_cmd = ["git", "clone", "--", clean_url, str(repo_dir)]
-            fallback_res = subprocess.run(fallback_cmd, capture_output=True, text=True)
+            fallback_res = self._run(fallback_cmd)
             if fallback_res.returncode != 0:
                 raise GitCloneError(
                     f"Failed to clone git repository {git_url} (ref: {git_ref}):\n"
                     f"{fallback_res.stderr or result.stderr or result.stdout}"
                 )
-            subprocess.run(["git", "checkout", git_ref], cwd=str(repo_dir), capture_output=True)
+            self._run(["git", "checkout", git_ref], cwd=repo_dir)
 
         return repo_dir
+
+    @staticmethod
+    def _run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+        """Run git with a finite upper bound so network operations cannot hang forever."""
+        try:
+            return subprocess.run(
+                cmd,
+                cwd=str(cwd) if cwd else None,
+                capture_output=True,
+                text=True,
+                timeout=COMMAND_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as err:
+            raise GitCloneError(
+                f"Git command timed out after {COMMAND_TIMEOUT_SECONDS} seconds: {cmd[1]}"
+            ) from err

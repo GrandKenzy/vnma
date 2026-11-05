@@ -7,8 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from vnma.core.timeouts import COMMAND_TIMEOUT_SECONDS
+from vnma.core.errors import VnmaError
 
-class BuildError(RuntimeError):
+
+class BuildError(VnmaError):
     """Raised when building a wheel from source code fails."""
 
 
@@ -115,7 +118,12 @@ class SourceBuilder:
         ]
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=COMMAND_TIMEOUT_SECONDS,
+            )
             if result.returncode != 0:
                 raise BuildError(
                     f"Failed to build wheel from '{source_dir.name}':\n{result.stderr or result.stdout}"
@@ -139,9 +147,14 @@ class SourceBuilder:
                 return candidates[0]
 
             raise BuildError(f"Wheel build succeeded but no .whl found in {self._output_dir}")
+        except subprocess.TimeoutExpired as err:
+            raise BuildError(
+                f"Timed out building wheel from '{source_dir.name}' after "
+                f"{COMMAND_TIMEOUT_SECONDS} seconds"
+            ) from err
         finally:
             if temp_pyproject_created:
                 try:
                     (resolved_src / "pyproject.toml").unlink(missing_ok=True)
-                except Exception:
+                except OSError:
                     pass

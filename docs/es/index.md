@@ -1,6 +1,6 @@
 # Documentación de VNMA
 
-> **Versión:** `0.3.3` (Beta)
+> **Versión:** `1.1.0` (Production)
 > **Runtime:** CPython 3.11+ · Windows y Linux
 
 Bienvenido a la documentación oficial en español de **VNMA**, un gestor de dependencias y vendoring que instala los paquetes en un directorio local del proyecto (`vendor/`) en lugar de crear entornos virtuales.

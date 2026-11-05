@@ -9,7 +9,11 @@
 
 ## Current release
 
-### [`0.3.3`](changelog_0.3.3.md) · Beta
+### [`1.1.0`](changelog_1.1.0.md) · Production
+
+Security, reliability, cross-platform compatibility, and release metadata fixes.
+
+### [`0.3.3`](changelog_0.3.3.md) · Historical
 
 Safe entry-point bootstrap injection and AST import inspection.
 
@@ -18,15 +22,17 @@ Safe entry-point bootstrap injection and AST import inspection.
 Transitive dependencies across Git, local, and PyPI sources, and the
 `vnma insert-import` command.
 
-> [!IMPORTANT]
-> VNMA is still in beta. Minor API and behavioral changes may occur before a
-> stable release.
+VNMA 1.1.0 is the current production release.
 
 ## Release timeline
 
 | Version | Date | Main focus | Notes |
 | --- | --- | --- | --- |
-| [`0.3.3`](changelog_0.3.3.md) | 2026-10-26 | Safe bootstrap injection and AST import inspection | Current |
+| [`1.1.0`](changelog_1.1.0.md) | 2026-11-04 | Security, reliability, and Linux compatibility fixes | Current |
+| [`1.0.2`](changelog_1.0.2.md) | — | Previous production release | Superseded |
+| [`1.0.1`](changelog_1.0.1.md) | — | Previous production release | Superseded |
+| [`1.0.0`](changelog_1.0.0.md) | — | First production release | Superseded |
+| [`0.3.3`](changelog_0.3.3.md) | 2026-10-26 | Safe bootstrap injection and AST import inspection | Historical |
 | [`0.3.2`](changelog_0.3.2.md) | 2026-10-26 | Nested dependencies and entry-point bootstrap | Beta |
 | [`0.3.1`](changelog_0.3.1.md) | 2026-10-24 | Test runner and configuration safety | Beta |
 | [`0.3.0`](changelog_0.3.0.md) | 2026-10-24 | Resolver backtracking and transactions | Beta |

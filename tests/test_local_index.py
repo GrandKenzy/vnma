@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 from vnma.core.models import PackageSpec
+from vnma.pypi.cache import WheelCache
 from vnma.pypi.local_index import LocalWheelIndex
 from vnma.pypi.resolver import WheelResolver
 
@@ -80,6 +81,19 @@ class TestLocalWheelIndex(unittest.TestCase):
             resolved_wheel = resolver.resolve_wheel(spec)
             self.assertEqual(resolved_wheel.version, "0.9.0")
             self.assertEqual(resolved_wheel.filename, wheel_file.name)
+
+    def test_cache_download_uses_sanitized_basename(self) -> None:
+        """A filename from a remote index cannot place a file outside the cache."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / "source.whl"
+            source.write_bytes(b"wheel")
+            cache = WheelCache(root / "cache")
+            stored = cache.download_wheel("file://" + source.as_posix(), "../nested/evil.whl")
+
+            self.assertEqual(stored, root / "cache" / "evil.whl")
+            self.assertTrue(stored.is_file())
+            self.assertFalse((root / "nested" / "evil.whl").exists())
 
 
 if __name__ == "__main__":

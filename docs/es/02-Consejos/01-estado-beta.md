@@ -1,6 +1,6 @@
 # Estado Beta y consideraciones de estabilidad
 
-`vnma` se encuentra actualmente en **Beta (v0.3.3)**. Este documento ofrece un resumen objetivo de los entornos probados, las expectativas de estabilidad y las prácticas de despliegue recomendadas.
+`vnma` se encuentra actualmente en **Production (v1.1.0)**. Este documento ofrece un resumen objetivo de los entornos probados, las expectativas de estabilidad y las prácticas de despliegue recomendadas.
 
 ---
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from vnma.core.config import ConfigHandler, VnmaConfig
 from vnma.core.context import ProjectContext
+from vnma.core.errors import ManifestError
 from vnma.core.models import PackageSpec, VnmaManifest, normalize_package_name
 from vnma.core.path_resolver import PortablePathResolver
 
@@ -24,8 +25,11 @@ class LockfileHandler:
         if not lock_path.is_file():
             return None
         try:
-            return json.loads(lock_path.read_text(encoding="utf-8"))
-        except Exception:
+            data = json.loads(lock_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("Lockfile root must be an object")
+            return data
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return None
 
     @classmethod
@@ -70,7 +74,7 @@ class LockfileHandler:
         try:
             raw = json.loads(context.manifest_path.read_text(encoding="utf-8"))
             manifest = VnmaManifest.from_dict(raw)
-        except Exception:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             return False
 
         locked_pkgs = lock_data.get("packages", {})
@@ -103,8 +107,10 @@ class LockfileHandler:
             try:
                 raw_manifest = json.loads(context.manifest_path.read_text(encoding="utf-8"))
                 manifest_data = VnmaManifest.from_dict(raw_manifest)
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as err:
+                raise ManifestError(
+                    f"Cannot update {context.lock_path.name}: installed manifest is corrupt"
+                ) from err
 
         config = ConfigHandler.load(context.config_path, context.pyproject_path)
         specs_by_name = {spec.name: spec for spec in config.get_all_specs()}

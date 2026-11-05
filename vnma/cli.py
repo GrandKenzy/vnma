@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import builtins
+import logging
 import os
 import re
 import subprocess
@@ -13,6 +15,8 @@ from pathlib import Path
 from vnma.core.cleaner import WorkspaceCleaner
 from vnma.core.config import ConfigHandler, VnmaConfig
 from vnma.core.context import ProjectContext
+from vnma.core.errors import VnmaError
+from vnma.core.timeouts import COMMAND_TIMEOUT_SECONDS
 from vnma.core.dag_resolver import TransitiveDagResolver
 from vnma.core.link_manager import LinkManager
 from vnma.core.lockfile import LockfileHandler
@@ -32,6 +36,22 @@ from vnma.wheel.builder import SourceBuilder
 from vnma.wheel.installer import WheelInstaller
 from vnma.wheel.pruner import OrphanPruner
 from vnma.wheel.uninstaller import WheelUninstaller
+
+
+_QUIET = False
+_LOGGER = logging.getLogger("vnma")
+
+
+def _console_print(*args, **kwargs):
+    """Keep normal CLI output suppressible while always showing stderr errors."""
+    if _QUIET and kwargs.get("file", sys.stdout) is not sys.stderr:
+        return
+    return builtins.print(*args, **kwargs)
+
+
+# Existing command implementations use print for their user-facing output.
+# Binding the module name keeps --quiet consistent without changing error paths.
+print = _console_print
 
 
 def cmd_init(args: argparse.Namespace, context: ProjectContext) -> int:
@@ -123,7 +143,7 @@ def cmd_insert_import(args: argparse.Namespace, context: ProjectContext) -> int:
 
     try:
         display_name = target_path.relative_to(context.project_root).as_posix()
-    except Exception:
+    except ValueError:
         display_name = str(target_path)
 
     if not target_path.exists():
@@ -227,7 +247,7 @@ def cmd_insert_import(args: argparse.Namespace, context: ProjectContext) -> int:
     try:
         temp_path.write_bytes(new_bytes)
         temp_path.replace(target_path)
-    except Exception as err:
+    except OSError as err:
         if temp_path.exists():
             try:
                 temp_path.unlink()
@@ -345,8 +365,10 @@ def cmd_install(args: argparse.Namespace, context: ProjectContext) -> int:
                         if wheel_rel:
                             _download_and_install(dep_spec, wheel_rel, cache, installer)
                 LockfileHandler.update(context, resolved_specs=plan.all_resolved_specs)
-            except Exception:
-                pass
+            except (VnmaError, OSError, ValueError) as err:
+                _LOGGER.error("Editable dependency installation failed: %s", err)
+                print(f"[vnma] Installation error: {err}", file=sys.stderr)
+                return 1
         else:
             LockfileHandler.update(context)
         print(f"[vnma] Synchronized {context.lock_path.name}")
@@ -1037,9 +1059,10 @@ def cmd_test(args: argparse.Namespace, context: ProjectContext) -> int:
             cwd=str(root),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            timeout=COMMAND_TIMEOUT_SECONDS,
         )
         has_pytest = (check.returncode == 0)
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         has_pytest = False
 
     if has_pytest:
@@ -1233,6 +1256,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="vnma",
         description="VNMA — Vendor Manager for Python",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="count", default=0,
+        help="Increase diagnostic logging (repeat for debug output)",
+    )
+    parser.add_argument(
+        "-q", "--quiet", action="store_true",
+        help="Suppress normal progress output while retaining errors",
     )
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -1476,8 +1507,21 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(args_list)
+    global _QUIET
+    _QUIET = bool(args.quiet)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose > 1 else logging.INFO if args.verbose else logging.WARNING,
+        format="[vnma] %(levelname)s: %(message)s",
+    )
     context = ProjectContext()
-    return args.handler(args, context)
+    try:
+        return args.handler(args, context)
+    except VnmaError as err:
+        print(f"[vnma] Error: {err}", file=sys.stderr)
+        return err.exit_code
+    except subprocess.TimeoutExpired as err:
+        print(f"[vnma] Error: command timed out after {err.timeout} seconds", file=sys.stderr)
+        return 124
 
 
 if __name__ == "__main__":

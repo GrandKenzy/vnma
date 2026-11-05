@@ -112,7 +112,7 @@ class LocalWheelIndex:
                                 if line.startswith("Requires-Dist:"):
                                     requires_dist.append(line[len("Requires-Dist:") :].strip())
                         break
-        except Exception:
+        except (OSError, zipfile.BadZipFile, KeyError, TypeError, ValueError):
             pass
 
         result = (digest, requires_dist)

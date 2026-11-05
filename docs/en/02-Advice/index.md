@@ -1,6 +1,6 @@
 # 02. Advice
 
-> **Current Version:** `0.3.3` (Beta)
+> **Current Version:** `1.1.0` (Production)
 
 This section describes how stable VNMA is, what it cannot do by design, and where it is heading.
 

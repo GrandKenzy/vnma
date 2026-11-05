@@ -35,7 +35,7 @@ class DependencyInspector:
                 if config.project_name:
                     pkg_name = normalize_package_name(config.project_name)
                 dependencies.extend(config.get_all_specs(include_dev=False))
-            except Exception:
+            except OSError:
                 pass
 
         if vnma_cfg.is_file():
@@ -59,7 +59,7 @@ class DependencyInspector:
                         else:
                             target_cand = resolved
                         module_paths.append(PortablePathResolver.to_portable_string(target_cand))
-            except Exception:
+            except OSError:
                 pass
 
         if not dependencies and pyproject_cfg.is_file():
@@ -77,7 +77,7 @@ class DependencyInspector:
                     from vnma.core.config import VnmaConfig
                     temp_cfg = VnmaConfig(dependencies=tool_deps, base_dir=resolved)
                     dependencies.extend(temp_cfg.get_all_specs(include_dev=False))
-            except Exception:
+            except OSError:
                 pass
 
         if not module_paths:

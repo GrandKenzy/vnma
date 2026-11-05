@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from vnma.core.context import ProjectContext
+from vnma.core.timeouts import COMMAND_TIMEOUT_SECONDS
 
 
 class EntryPointResolver:
@@ -85,7 +86,7 @@ class ScriptRunner:
                         resolved_mp = str(PortablePathResolver.expand(mp, base_dir=self._context.project_root))
                         if resolved_mp not in injected_parts:
                             injected_parts.append(resolved_mp)
-        except Exception:
+        except (OSError, ValueError):
             pass
 
         injected = os.pathsep.join(injected_parts)
@@ -113,7 +114,12 @@ class ScriptRunner:
         resolved_script = script_path.resolve()
         env = self._build_vendor_env()
         cmd = [sys.executable, str(resolved_script), *args]
-        completed = subprocess.run(cmd, env=env, cwd=str(self._context.project_root))
+        completed = subprocess.run(
+            cmd,
+            env=env,
+            cwd=str(self._context.project_root),
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
         return completed.returncode
 
     def run_module(
@@ -127,7 +133,12 @@ class ScriptRunner:
         if env_overrides:
             env.update(env_overrides)
         cmd = [sys.executable, "-m", module, *args]
-        completed = subprocess.run(cmd, env=env, cwd=str(self._context.project_root))
+        completed = subprocess.run(
+            cmd,
+            env=env,
+            cwd=str(self._context.project_root),
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
         return completed.returncode
 
     def exec_binary(self, binary_name: str, args: Sequence[str] = ()) -> int:
@@ -153,5 +164,10 @@ class ScriptRunner:
 
         env = self._build_vendor_env()
         cmd = [str(target_bin), *args]
-        completed = subprocess.run(cmd, env=env, cwd=str(self._context.project_root))
+        completed = subprocess.run(
+            cmd,
+            env=env,
+            cwd=str(self._context.project_root),
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
         return completed.returncode

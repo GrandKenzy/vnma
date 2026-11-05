@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vnma"
-version = "1.0.2"
+dynamic = ["version"]
 description = "Vendor Manager for Python — hermetic, zero-venv dependency management."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "LicenseRef-VNMA"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     { name = "VNMA Team" }
@@ -41,3 +42,6 @@ vnma = "vnma.cli:main"
 where = ["."]
 include = ["vnma*"]
 exclude = ["tests*", "docs*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "vnma.__version__" }

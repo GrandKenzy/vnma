@@ -10,7 +10,6 @@ from vnma.tools.search import run_search
 
 TOOL_REGISTRY = {
     "bigfiles": run_bigfiles,
-    "bifgiles": run_bigfiles,
     "--bigfiles": run_bigfiles,
     "cacheclean": run_cacheclean,
     "--cacheclean": run_cacheclean,

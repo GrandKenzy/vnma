@@ -9,6 +9,8 @@ import zipfile
 from pathlib import Path
 
 from vnma.core.context import ProjectContext
+from vnma.core.errors import ManifestError
+from vnma.core.lockfile import LockfileHandler
 from vnma.core.transaction import WorkspaceTransaction
 from vnma.wheel.installer import WheelInstaller
 
@@ -86,6 +88,21 @@ class TestWorkspaceTransaction(unittest.TestCase):
             self.assertEqual((root / "vendor/stable/__init__.py").read_text(), "old\n")
             self.assertFalse(txn.stage.exists())
             self.assertFalse(txn.lock.exists())
+
+    def test_corrupt_manifest_does_not_overwrite_lockfile(self) -> None:
+        """Lock synchronization must fail closed when installed metadata is corrupt."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "vnma.toml").write_text('[project]\nname = "app"\n', encoding="utf-8")
+            context = ProjectContext(start_path=root)
+            context.meta_path.mkdir(parents=True)
+            context.manifest_path.write_text("{not json", encoding="utf-8")
+            original_lock = '{"packages": {"keep": {"version": "1.0"}}}\n'
+            context.lock_path.write_text(original_lock, encoding="utf-8")
+
+            with self.assertRaises(ManifestError):
+                LockfileHandler.update(context)
+            self.assertEqual(context.lock_path.read_text(encoding="utf-8"), original_lock)
 
     def test_recover_does_not_roll_back_completed_commit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

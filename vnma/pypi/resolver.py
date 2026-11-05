@@ -263,7 +263,7 @@ class WheelResolver:
         if SpecifierSet is not None and Version is not None:
             try:
                 return Version(version) in SpecifierSet(specifier)
-            except Exception:
+            except ValueError:
                 return False
 
         clauses = [c.strip() for c in specifier.split(",") if c.strip()]

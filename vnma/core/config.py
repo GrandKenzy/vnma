@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from vnma.core.models import PackageSpec, normalize_package_name
+from vnma.core.errors import ConfigError
 from vnma.core.path_resolver import PortablePathResolver
 
 
@@ -65,15 +68,21 @@ class ConfigHandler:
     def load(config_path: Path, pyproject_path: Path | None = None) -> VnmaConfig:
         """Parse configuration from vnma.toml or fallback to pyproject.toml."""
         if config_path.exists():
-            with config_path.open("rb") as f:
-                data = tomllib.load(f)
+            try:
+                with config_path.open("rb") as f:
+                    data = tomllib.load(f)
+            except (OSError, tomllib.TOMLDecodeError, TypeError, ValueError) as err:
+                raise ConfigError(f"Invalid TOML configuration: {config_path}") from err
             config = ConfigHandler._parse_vnma_data(data)
             config.base_dir = config_path.parent.resolve()
             return config
 
         if pyproject_path and pyproject_path.exists():
-            with pyproject_path.open("rb") as f:
-                data = tomllib.load(f)
+            try:
+                with pyproject_path.open("rb") as f:
+                    data = tomllib.load(f)
+            except (OSError, tomllib.TOMLDecodeError, TypeError, ValueError) as err:
+                raise ConfigError(f"Invalid TOML configuration: {pyproject_path}") from err
             tool_data = data.get("tool", {}).get("vnma", {})
             project_data = data.get("project", {})
             deps = dict(tool_data.get("dependencies", {}))
@@ -95,67 +104,46 @@ class ConfigHandler:
 
     @staticmethod
     def save(config_path: Path, config: VnmaConfig) -> None:
-        """Serialize configuration directly to TOML file format."""
+        """Serialize configuration to valid TOML with escaped string values."""
         lines: list[str] = [
             "[project]",
-            f'name = "{config.project_name}"',
-            f'version = "{config.version}"',
+            f"name = {ConfigHandler._format_toml_value(config.project_name)}",
+            f"version = {ConfigHandler._format_toml_value(config.version)}",
             "",
             "[dependencies]",
         ]
         for name, req in sorted(config.dependencies.items()):
-            if isinstance(req, dict):
-                parts = []
-                for k, v in req.items():
-                    if isinstance(v, bool):
-                        parts.append(f"{k} = {'true' if v else 'false'}")
-                    else:
-                        clean_v = str(v).replace("\\", "/")
-                        parts.append(f'{k} = "{clean_v}"')
-                formatted_inner = ", ".join(parts)
-                lines.append(f"{name} = {{ {formatted_inner} }}")
-            else:
-                lines.append(f'{name} = "{req}"')
+            lines.append(
+                f"{ConfigHandler._format_toml_key(name)} = "
+                f"{ConfigHandler._format_toml_value(req)}"
+            )
 
         lines.extend([
             "",
             "[dev-dependencies]",
         ])
         for name, req in sorted(config.dev_dependencies.items()):
-            if isinstance(req, dict):
-                parts = []
-                for k, v in req.items():
-                    if isinstance(v, bool):
-                        parts.append(f"{k} = {'true' if v else 'false'}")
-                    else:
-                        clean_v = str(v).replace("\\", "/")
-                        parts.append(f'{k} = "{clean_v}"')
-                formatted_inner = ", ".join(parts)
-                lines.append(f"{name} = {{ {formatted_inner} }}")
-            else:
-                lines.append(f'{name} = "{req}"')
+            lines.append(
+                f"{ConfigHandler._format_toml_key(name)} = "
+                f"{ConfigHandler._format_toml_value(req)}"
+            )
 
         lines.extend([
             "",
             "[tool.vnma]",
-            f'vendor_dir = "{config.vendor_dir}"',
-            f'ide_integration = {config.ide_integration!r}'.replace("'", '"'),
+            f"vendor_dir = {ConfigHandler._format_toml_value(config.vendor_dir)}",
+            f"ide_integration = {ConfigHandler._format_toml_value(config.ide_integration)}",
         ])
 
         if config.package_overrides:
             lines.append("")
             for pkg_name, overrides in sorted(config.package_overrides.items()):
-                lines.append(f"[package.{pkg_name}]")
+                lines.append(f"[package.{ConfigHandler._format_toml_key(pkg_name)}]")
                 for k, v in overrides.items():
-                    if isinstance(v, list):
-                        lines.append(f'{k} = {v!r}'.replace("'", '"'))
-                    elif isinstance(v, dict):
-                        lines.append(f'{k} = {v!r}'.replace("'", '"'))
-                    elif isinstance(v, bool):
-                        lines.append(f"{k} = {'true' if v else 'false'}")
-                    else:
-                        clean_v = str(v).replace("\\", "/")
-                        lines.append(f'{k} = "{clean_v}"')
+                    lines.append(
+                        f"{ConfigHandler._format_toml_key(k)} = "
+                        f"{ConfigHandler._format_toml_value(v)}"
+                    )
 
         lines.append("")
         config_path.write_text("\n".join(lines), encoding="utf-8")
@@ -163,17 +151,34 @@ class ConfigHandler:
     @staticmethod
     def _format_entry_line(name: str, value: Any) -> str:
         """Format dependency key and value for TOML persistence."""
+        return f"{ConfigHandler._format_toml_key(name)} = {ConfigHandler._format_toml_value(value)}"
+
+    @staticmethod
+    def _format_toml_key(value: Any) -> str:
+        """Format a TOML key, quoting it when a bare key is not valid."""
+        text = str(value)
+        if re.fullmatch(r"[A-Za-z0-9_-]+", text):
+            return text
+        return json.dumps(text, ensure_ascii=False)
+
+    @staticmethod
+    def _format_toml_value(value: Any) -> str:
+        """Format supported TOML values recursively without unsafe repr replacements."""
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        if isinstance(value, str):
+            return json.dumps(value.replace("\\", "/"), ensure_ascii=False)
+        if isinstance(value, (list, tuple)):
+            return "[" + ", ".join(ConfigHandler._format_toml_value(item) for item in value) + "]"
         if isinstance(value, dict):
-            parts = []
-            for k, v in value.items():
-                if isinstance(v, bool):
-                    parts.append(f"{k} = {'true' if v else 'false'}")
-                else:
-                    clean_v = str(v).replace("\\", "/")
-                    parts.append(f'{k} = "{clean_v}"')
-            formatted_inner = ", ".join(parts)
-            return f"{name} = {{ {formatted_inner} }}"
-        return f'{name} = "{value}"'
+            items = ", ".join(
+                f"{ConfigHandler._format_toml_key(key)} = {ConfigHandler._format_toml_value(item)}"
+                for key, item in value.items()
+            )
+            return "{ " + items + " }"
+        raise TypeError(f"Unsupported TOML value: {type(value).__name__}")
 
     @staticmethod
     def _add_dependency_pyproject(

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from vnma.core.config import ConfigHandler
 from vnma.core.context import ProjectContext
+from vnma.core.errors import ManifestError
 from vnma.core.models import InstalledPackageRecord, VnmaManifest, normalize_package_name
 from vnma.core.package_config import PackageConfig
 from vnma.runtime.bootstrap import BootstrapGenerator
@@ -199,13 +200,15 @@ class WheelInstaller:
         tmp_path.replace(self._context.manifest_path)
 
     def _load_manifest(self) -> VnmaManifest:
-        """Load manifest from disk or return a clean default manifest."""
+        """Load manifest from disk, refusing to overwrite a corrupt one."""
         if self._context.manifest_path.is_file():
             try:
                 data = json.loads(self._context.manifest_path.read_text(encoding="utf-8"))
                 return VnmaManifest.from_dict(data)
-            except (json.JSONDecodeError, KeyError):
-                pass
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as err:
+                raise ManifestError(
+                    f"Installed manifest is corrupt: {self._context.manifest_path}"
+                ) from err
         return VnmaManifest()
 
     def _record_python_version(self) -> None:

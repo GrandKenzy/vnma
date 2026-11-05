@@ -7,6 +7,7 @@ succeeds. A journal and previous vendor backup allow recovery after crashes.
 from __future__ import annotations
 
 import base64
+import ctypes
 import json
 import os
 import shutil
@@ -68,11 +69,13 @@ class WorkspaceTransaction:
         if lock_path.is_file():
             try:
                 pid = int(lock_path.read_text(encoding="ascii").strip())
-                os.kill(pid, 0)
-            except (OSError, ValueError):
-                pass
+                if cls._is_process_alive(pid):
+                    raise RuntimeError(f"VNMA transaction owned by active process {pid}")
+            except ValueError as err:
+                raise RuntimeError("Invalid PID in VNMA transaction lock") from err
             else:
-                raise RuntimeError(f"VNMA transaction owned by active process {pid}")
+                # A missing process means the lock is stale and recovery may continue.
+                pass
 
         def safe_path(name: str) -> Path:
             if not name or Path(name).is_absolute():
@@ -106,6 +109,30 @@ class WorkspaceTransaction:
         lock_path.unlink(missing_ok=True)
         # Recover the target chosen before the crash, not an incidental fallback.
         context.vendor_name = data["target"]
+
+    @staticmethod
+    def _is_process_alive(pid: int) -> bool:
+        """Check a PID without using Unix-only signal semantics on Windows."""
+        if pid <= 0:
+            return False
+        if os.name == "nt":
+            process_query_limited = 0x1000
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            handle = kernel32.OpenProcess(process_query_limited, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            # ERROR_INVALID_PARAMETER means that the PID no longer exists.
+            return ctypes.get_last_error() != 87
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return True
 
     @staticmethod
     def _restore_sidecars(root: Path, snapshots: dict[str, str | None]) -> None:

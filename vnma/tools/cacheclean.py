@@ -58,12 +58,12 @@ def clean_caches(project_root: Path, targets: Sequence[str] | None = None) -> tu
                                 try:
                                     freed_bytes += fp.stat().st_size
                                     deleted_files += 1
-                                except Exception:
+                                except OSError:
                                     pass
                         try:
                             shutil.rmtree(full_dpath)
                             deleted_dirs += 1
-                        except Exception:
+                        except OSError:
                             pass
 
             # Check for standalone .pyc / .pyo files outside __pycache__
@@ -75,7 +75,7 @@ def clean_caches(project_root: Path, targets: Sequence[str] | None = None) -> tu
                             freed_bytes += full_fpath.stat().st_size
                             full_fpath.unlink(missing_ok=True)
                             deleted_files += 1
-                        except Exception:
+                        except OSError:
                             pass
 
     return deleted_dirs, deleted_files, freed_bytes

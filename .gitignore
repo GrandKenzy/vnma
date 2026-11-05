@@ -14,6 +14,23 @@ build/
 dist/
 *.egg-info/
 *.egg
+pip-wheel-metadata/
+*.whl
+*.tar.gz
+
+# Python environments and tooling caches
+.venv/
+venv/
+env/
+ENV/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+htmlcov/
+coverage.xml
+*.cover
 
 # VNMA vendor and cache artifacts
 vendor/
@@ -24,8 +41,12 @@ vnma_cache/
 
 # Environment and IDEs
 .env
+.env.local
+.env.*.local
 .vscode/
 .idea/
+.pypirc
+token.txt
 
 # Development scratch files and research notes
 nota.txt
@@ -41,6 +62,10 @@ test.py
 *.log
 .pytest_cache/
 .coverage
+*.bak
+*.swp
+*_project_dump.txt
+*.local
 
 # AI documentation and skills
 vnma_skills.md

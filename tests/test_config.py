@@ -149,6 +149,22 @@ class TestConfigHandler(unittest.TestCase):
             self.assertIn("my-local", reloaded.dependencies)
             self.assertIn("my-git", reloaded.dependencies)
 
+    def test_save_escapes_toml_strings(self) -> None:
+        """Project names and dependency values containing quotes remain valid TOML."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_file = Path(tmp_dir) / "vnma.toml"
+            ConfigHandler.save(
+                config_file,
+                VnmaConfig(
+                    project_name='name "with" quotes',
+                    dependencies={"local-pkg": {"path": r'C:\tmp\quoted"dir'}},
+                ),
+            )
+
+            loaded = ConfigHandler.load(config_file)
+            self.assertEqual(loaded.project_name, 'name "with" quotes')
+            self.assertEqual(loaded.dependencies["local-pkg"]["path"], "C:/tmp/quoted\"dir")
+
     def test_get_all_specs_conversion(self) -> None:
         """Verify get_all_specs converts strings, paths, and git dependencies."""
         with tempfile.TemporaryDirectory() as tmp_dir:

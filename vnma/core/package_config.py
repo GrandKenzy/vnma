@@ -5,6 +5,8 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from vnma.core.errors import ConfigError
 from typing import Any
 
 from vnma.core.models import normalize_package_name
@@ -92,5 +94,5 @@ class PackageConfig:
             with config_path.open("rb") as f:
                 data = tomllib.load(f)
             return cls.from_dict(data)
-        except Exception:
-            return None
+        except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as err:
+            raise ConfigError(f"Invalid package configuration: {config_path}") from err

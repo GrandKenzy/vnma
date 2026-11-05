@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+import tomllib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 from vnma.core.path_resolver import PortablePathResolver
+from vnma.core.errors import ConfigError
 
 _NORM_REGEX = re.compile(r"[-_.]+")
 _DASH_VER_REGEX = re.compile(
@@ -62,8 +64,8 @@ class PackageSpec:
                         data = tomllib.load(f)
                     if "package" in data and "name" in data["package"]:
                         pkg_name = normalize_package_name(data["package"]["name"])
-                except Exception:
-                    pass
+                except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as err:
+                    raise ConfigError(f"Invalid package configuration: {vnma_cfg}") from err
             elif (res_path / "pyproject.toml").is_file():
                 try:
                     import tomllib
@@ -71,8 +73,8 @@ class PackageSpec:
                         data = tomllib.load(f)
                     if "project" in data and "name" in data["project"]:
                         pkg_name = normalize_package_name(data["project"]["name"])
-                except Exception:
-                    pass
+                except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as err:
+                    raise ConfigError(f"Invalid package configuration: {res_path / 'pyproject.toml'}") from err
             return cls(name=pkg_name, path=res_path)
 
         cleaned = cleaned.split(";", 1)[0].strip()
@@ -109,8 +111,8 @@ class PackageSpec:
             from packaging.version import Version
             spec_set = SpecifierSet(self.specifier)
             return Version(version_str) in spec_set
-        except Exception:
-            return True
+        except ValueError:
+            return False
 
 
 @dataclass(slots=True, frozen=True)
@@ -160,6 +162,8 @@ class InstalledPackageRecord:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> InstalledPackageRecord:
         """Hydrate record from serialized dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError("Installed package record must be an object")
         files = [
             InstalledFile(
                 relative_path=f["relative_path"],
@@ -203,9 +207,14 @@ class VnmaManifest:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VnmaManifest:
         """Deserialize manifest from primitive dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError("VNMA manifest must be an object")
+        raw_packages = data.get("packages", {})
+        if not isinstance(raw_packages, dict):
+            raise ValueError("VNMA manifest packages must be an object")
         packages = {
             normalize_package_name(name): InstalledPackageRecord.from_dict(pkg_data)
-            for name, pkg_data in data.get("packages", {}).items()
+            for name, pkg_data in raw_packages.items()
         }
         return cls(
             manifest_version=data.get("manifest_version", "1.0"),

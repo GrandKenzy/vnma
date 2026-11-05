@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from vnma.visitors.base import ProjectVisitor
+from vnma.core.errors import ConfigError
 
 if TYPE_CHECKING:
     from vnma.core.context import ProjectContext
@@ -45,8 +46,8 @@ class VSCodeConfigVisitor(ProjectVisitor):
             try:
                 raw_text = settings_file.read_text(encoding="utf-8")
                 settings = loads_jsonc(raw_text)
-            except Exception:
-                settings = {}
+            except (OSError, ValueError) as err:
+                raise ConfigError(f"Invalid VS Code settings file: {settings_file}") from err
 
         linked_paths: list[str] = []
         try:
@@ -78,7 +79,7 @@ class VSCodeConfigVisitor(ProjectVisitor):
                             linked_paths.append(rel_candidate)
                         if abs_posix not in linked_paths:
                             linked_paths.append(abs_posix)
-        except Exception:
+        except OSError:
             pass
 
         target_paths = [vendor_rel, *linked_paths]
@@ -138,7 +139,7 @@ class PyCharmConfigVisitor(ProjectVisitor):
                         except ValueError:
                             if target_dir.as_posix() not in linked_paths:
                                 linked_paths.append(target_dir.as_posix())
-        except Exception:
+        except OSError:
             pass
 
         idea_dir = context.project_root / ".idea"

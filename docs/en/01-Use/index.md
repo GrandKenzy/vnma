@@ -1,6 +1,6 @@
 # 01. Use
 
-> **Current Version:** `0.3.3` (Beta)
+> **Current Version:** `1.1.0` (Production)
 
 This section explains how to install VNMA, manage project dependencies, configure projects and packages, and run code with the vendored runtime.
 

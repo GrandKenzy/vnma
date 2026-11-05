@@ -65,7 +65,7 @@ def search_pattern_in_files(
 
         try:
             content = fpath.read_text(encoding="utf-8", errors="replace")
-        except Exception:
+        except OSError:
             continue
 
         total_searched += 1

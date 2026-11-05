@@ -18,7 +18,7 @@
       "dll_directories": [],
       "files_count": 6,
       "has_native_binaries": false,
-      "path": "C:/Users/Kentucky/Desktop/PROYECTOS _ PYTHON/vnma/examples/nested_gram/subproject",
+      "path": "../subproject",
       "sha256": "5e1bdef95206e69e58709632070885a903f4a21e09869c7b5bf780ad164c6e5b",
       "source": "local",
       "version": "1.0.0",

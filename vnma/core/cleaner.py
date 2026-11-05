@@ -142,7 +142,7 @@ class WorkspaceCleaner:
                     else:
                         vscode_file.write_text(json.dumps(settings, indent=4), encoding="utf-8")
                         actions.append("Cleaned VNMA paths from '.vscode/settings.json'")
-            except Exception:
+            except (OSError, TypeError, ValueError):
                 pass
 
         env_file = root / ".env"
@@ -160,7 +160,7 @@ class WorkspaceCleaner:
                 elif len(kept) != len(lines):
                     env_file.write_text(clean_body + "\n", encoding="utf-8")
                     actions.append("Cleaned VNMA PYTHONPATH from '.env'")
-            except Exception:
+            except OSError:
                 pass
 
         idea_dir = root / ".idea"
@@ -176,7 +176,7 @@ class WorkspaceCleaner:
                     if cleaned_iml != text:
                         iml.write_text(cleaned_iml, encoding="utf-8")
                         actions.append(f"Cleaned sourceFolder from '{iml.name}'")
-                except Exception:
+                except OSError:
                     pass
 
         return actions

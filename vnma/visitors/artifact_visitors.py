@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import configparser
+import re
+import shlex
 import sys
 from pathlib import Path
 
+from vnma.core.errors import ArtifactError
 from vnma.core.models import InstalledFile
 from vnma.visitors.base import ArtifactElement, ArtifactVisitor
 
@@ -85,6 +88,13 @@ class RecordCollectorVisitor(ArtifactVisitor):
 class ScriptWrapperVisitor(ArtifactVisitor):
     """Generates cross-platform command-line launcher wrappers for package scripts."""
 
+    _COMMAND_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    _TARGET_RE = re.compile(
+        r"^(?P<module>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"
+        r":(?P<attrs>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)"
+        r"(?:\s*\[[^\]]*\])?$"
+    )
+
     def __init__(self, bin_dir: Path, vendor_dir: Path) -> None:
         """Initialize launcher generator with destination bin directory and vendor root."""
         self._bin_dir = bin_dir
@@ -108,28 +118,25 @@ class ScriptWrapperVisitor(ArtifactVisitor):
         parser = configparser.ConfigParser()
         try:
             parser.read(file_path, encoding="utf-8")
-        except Exception:
-            return
+        except (configparser.Error, OSError, UnicodeError) as err:
+            raise ArtifactError(f"Invalid entry_points.txt: {file_path}") from err
 
         if parser.has_section("console_scripts"):
             for cmd_name, target in parser.items("console_scripts"):
                 cmd_clean = cmd_name.strip()
                 target_clean = target.strip()
+                self._validate_command_name(cmd_clean)
+                self._validate_target(target_clean)
                 self._discovered_entry_points[cmd_clean] = target_clean
                 self._generate_executable_wrapper(cmd_clean, target_clean)
 
     def _generate_executable_wrapper(self, command_name: str, target: str) -> None:
         """Create shell and Windows batch launchers independent of vendor directory name."""
+        self._validate_command_name(command_name)
+        module_part, attr_part = self._validate_target(target)
         self._bin_dir.mkdir(parents=True, exist_ok=True)
         py_exe = sys.executable
-        module_part, _, attr_part = target.partition(":")
-        attr_expr = f"getattr(mod, {attr_part!r})()" if attr_part else ""
-
-        py_snippet = (
-            f"import importlib, sys; "
-            f"mod = importlib.import_module({module_part!r}); "
-            f"sys.exit({attr_expr})"
-        )
+        py_exe_sh = shlex.quote(py_exe)
 
         bat_file = self._bin_dir / f"{command_name}.cmd"
         # Resolve vendor relative to launcher location, not to the staging
@@ -138,7 +145,7 @@ class ScriptWrapperVisitor(ArtifactVisitor):
             "@echo off\r\n"
             'set "VNMA_VENDOR=%~dp0..\\.."\r\n'
             'set "PYTHONPATH=%VNMA_VENDOR%\\.vnma_meta\\site;%VNMA_VENDOR%;%PYTHONPATH%"\r\n'
-            f'"{py_exe}" -c "{py_snippet}" %*\r\n'
+            f'"{py_exe}" -m vnma.runtime.entrypoint "{command_name}" "{module_part}" "{attr_part}" %*\r\n'
         )
         bat_file.write_text(bat_content, encoding="utf-8")
 
@@ -147,7 +154,7 @@ class ScriptWrapperVisitor(ArtifactVisitor):
             "#!/usr/bin/env sh\n"
             'VNMA_VENDOR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"\n'
             'export PYTHONPATH="$VNMA_VENDOR/.vnma_meta/site:$VNMA_VENDOR:$PYTHONPATH"\n'
-            f'exec "{py_exe}" -c "{py_snippet}" "$@"\n'
+            f'exec {py_exe_sh} -m vnma.runtime.entrypoint "{command_name}" "{module_part}" "{attr_part}" "$@"\n'
         )
         sh_file.write_text(sh_content, encoding="utf-8")
         try:
@@ -160,3 +167,17 @@ class ScriptWrapperVisitor(ArtifactVisitor):
         cmd_name = artifact.relative_path.name
         self._discovered_entry_points[cmd_name] = str(artifact.relative_path)
         self._generate_executable_wrapper(cmd_name, f"{artifact.relative_path.stem}:main")
+
+    @classmethod
+    def _validate_command_name(cls, command_name: str) -> None:
+        """Reject names that could become shell syntax or escape the bin directory."""
+        if not cls._COMMAND_NAME_RE.fullmatch(command_name):
+            raise ArtifactError(f"Unsafe console script name: {command_name!r}")
+
+    @classmethod
+    def _validate_target(cls, target: str) -> tuple[str, str]:
+        """Return a safe module/attribute pair without embedding wheel data as code."""
+        match = cls._TARGET_RE.fullmatch(target)
+        if not match:
+            raise ArtifactError(f"Unsafe console script target: {target!r}")
+        return match.group("module"), match.group("attrs")

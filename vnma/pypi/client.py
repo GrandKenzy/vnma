@@ -9,6 +9,7 @@ from typing import Any
 
 import vnma
 from vnma.core.models import WheelRelease, normalize_package_name
+from vnma.core.timeouts import NETWORK_TIMEOUT_SECONDS
 
 
 class PyPIClient:
@@ -33,7 +34,7 @@ class PyPIClient:
             headers={"User-Agent": self._user_agent, "Accept": "application/json"},
         )
         try:
-            with urllib.request.urlopen(request) as response:
+            with urllib.request.urlopen(request, timeout=NETWORK_TIMEOUT_SECONDS) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as err:
             if err.code == 404:

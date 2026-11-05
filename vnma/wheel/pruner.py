@@ -10,6 +10,7 @@ from typing import Sequence
 
 from vnma.core.config import ConfigHandler
 from vnma.core.context import ProjectContext
+from vnma.core.errors import ManifestError
 from vnma.core.lockfile import LockfileHandler
 from vnma.core.models import PackageSpec, VnmaManifest, normalize_package_name
 from vnma.pypi.resolver import WheelResolver
@@ -107,8 +108,10 @@ class OrphanPruner:
         try:
             raw_manifest = json.loads(self._context.manifest_path.read_text(encoding="utf-8"))
             manifest = VnmaManifest.from_dict(raw_manifest)
-        except Exception:
-            return []
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as err:
+            raise ManifestError(
+                f"Installed manifest is corrupt: {self._context.manifest_path}"
+            ) from err
 
         config = ConfigHandler.load(self._context.config_path, self._context.pyproject_path)
         root_specs = list(config.get_all_specs(include_dev=True))

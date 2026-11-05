@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - pyproject.toml
+      - vnma/__init__.py
       - .github/workflows/publish.yml
 
 permissions:
@@ -50,7 +51,7 @@ jobs:
       - name: Verify built wheel metadata
         run: |
           python -m pip install --force-reinstall dist/*.whl
-          python -c "import vnma, importlib.metadata, tomllib; from pathlib import Path; version=tomllib.loads(Path('pyproject.toml').read_text())['project']['version']; assert vnma.__version__ == version; assert importlib.metadata.version('vnma') == version"
+          python -c "import vnma, importlib.metadata; assert vnma.__version__ == importlib.metadata.version('vnma')"
           python -m vnma --help
       - uses: actions/upload-artifact@v4
         with:

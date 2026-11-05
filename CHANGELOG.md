@@ -3,6 +3,7 @@
 Release notes for VNMA are kept in the [`changelog/`](changelog/README.md)
 folder, with one file per version:
 
+- [1.1.0](changelog/changelog_1.1.0.md)
 - [1.0.2](changelog/changelog_1.0.2.md)
 - [1.0.1](changelog/changelog_1.0.1.md)
 - [1.0.0](changelog/changelog_1.0.0.md)

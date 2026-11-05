@@ -130,7 +130,7 @@ Un entorno se define como **Estrictamente Hermético** si:
 $$\forall p \in \vec{P}, \quad p \notin \text{GlobalSitePackages}$$
 
 ### 5.2. El Operador de Proyección Hermética $\mathbf{P}_{\text{hermetic}}$
-En [`vnma/runtime/bootstrap.py`](file:///c:/Users/Kentucky/Desktop/PROYECTOS%20_%20PYTHON/vnma/vnma/runtime/bootstrap.py), implementamos el operador:
+En [`vnma/runtime/bootstrap.py`](vnma/runtime/bootstrap.py), implementamos el operador:
 $$\mathbf{P}_{\text{hermetic}}(\vec{P}) = (p_{\text{vendor}}) \mathbin{\Vert} \left( p \in \vec{P} \mid p \in \text{StdlibPaths} \right)$$
 
 Esto garantiza que:

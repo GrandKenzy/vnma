@@ -8,7 +8,9 @@ import shutil
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
 import vnma
+from vnma.core.timeouts import NETWORK_TIMEOUT_SECONDS
 
 
 class WheelCache:
@@ -30,20 +32,20 @@ class WheelCache:
 
     def get_wheel_path(self, filename: str) -> Path | None:
         """Retrieve path to cached wheel if present."""
-        clean_name = Path(filename).name
+        clean_name = self._clean_filename(filename)
         target = self._cache_dir / clean_name
         return target if target.is_file() else None
 
     def store_wheel(self, filename: str, source_path: Path) -> Path:
         """Copy local wheel into cache directory."""
-        clean_name = Path(filename).name
+        clean_name = self._clean_filename(filename)
         target = self._cache_dir / clean_name
         shutil.copy2(source_path, target)
         return target
 
     def download_wheel(self, url: str, filename: str, expected_sha256: str | None = None) -> Path:
         """Download remote wheel directly to cache with streaming sha256 calculation."""
-        clean_name = Path(filename).name
+        clean_name = self._clean_filename(filename)
         cached = self.get_wheel_path(clean_name)
         if cached:
             if not expected_sha256 or self._verify_sha256(cached, expected_sha256):
@@ -70,7 +72,7 @@ class WheelCache:
                 url,
                 headers={"User-Agent": f"vnma/{vnma.__version__}"},
             )
-            with urllib.request.urlopen(req) as response, temp_target.open("wb") as out:
+            with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECONDS) as response, temp_target.open("wb") as out:
                 while chunk := response.read(65536):
                     hasher.update(chunk)
                     out.write(chunk)
@@ -82,7 +84,7 @@ class WheelCache:
                 f"Checksum mismatch for {filename}: expected {expected_sha256}, got {digest}"
             )
 
-        final_path = self._cache_dir / filename
+        final_path = self._cache_dir / clean_name
         if final_path.exists():
             final_path.unlink()
         temp_target.rename(final_path)
@@ -96,3 +98,11 @@ class WheelCache:
             while chunk := f.read(65536):
                 hasher.update(chunk)
         return hasher.hexdigest().lower() == expected.lower()
+
+    @staticmethod
+    def _clean_filename(filename: str) -> str:
+        """Keep cache writes inside the cache directory on every supported OS."""
+        clean_name = Path(filename.replace("\\", "/")).name
+        if clean_name in {"", ".", ".."} or "\x00" in clean_name:
+            raise ValueError(f"Invalid wheel filename: {filename!r}")
+        return clean_name

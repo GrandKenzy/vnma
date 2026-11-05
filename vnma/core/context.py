@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -99,8 +100,10 @@ class ProjectContext(VisitableProject):
                 custom_dir = data.get("tool", {}).get("vnma", {}).get("vendor_dir")
                 if custom_dir:
                     return str(custom_dir)
-            except Exception:
-                pass
+            except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as err:
+                logging.getLogger("vnma").warning(
+                    "Could not inspect vendor_dir from %s: %s", config_file, err
+                )
 
         if pyproject_file.is_file():
             try:
@@ -110,8 +113,10 @@ class ProjectContext(VisitableProject):
                 custom_dir = data.get("tool", {}).get("vnma", {}).get("vendor_dir")
                 if custom_dir:
                     return str(custom_dir)
-            except Exception:
-                pass
+            except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as err:
+                logging.getLogger("vnma").warning(
+                    "Could not inspect vendor_dir from %s: %s", pyproject_file, err
+                )
 
         default_vendor = self.project_root / "vendor"
         meta_marker = default_vendor / ".vnma_meta"

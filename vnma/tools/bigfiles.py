@@ -47,7 +47,7 @@ def count_useful_lines(file_path: Path) -> tuple[int, int, int]:
             if b"\x00" in chunk:
                 return (0, 0, 0)
         content = file_path.read_text(encoding="utf-8", errors="replace")
-    except Exception:
+    except OSError:
         return (0, 0, 0)
 
     lines = content.splitlines()

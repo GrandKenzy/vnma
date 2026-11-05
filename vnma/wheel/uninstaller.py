@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from vnma.core.context import ProjectContext
+from vnma.core.errors import ManifestError
 from vnma.core.models import VnmaManifest, normalize_package_name
 
 
@@ -66,13 +67,15 @@ class WheelUninstaller:
         return True
 
     def _load_manifest(self) -> VnmaManifest:
-        """Load project manifest or return empty manifest instance."""
+        """Load project manifest, refusing to treat corruption as an empty install."""
         if self._context.manifest_path.is_file():
             try:
                 data = json.loads(self._context.manifest_path.read_text(encoding="utf-8"))
                 return VnmaManifest.from_dict(data)
-            except (json.JSONDecodeError, KeyError):
-                pass
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as err:
+                raise ManifestError(
+                    f"Installed manifest is corrupt: {self._context.manifest_path}"
+                ) from err
         return VnmaManifest()
 
     @staticmethod

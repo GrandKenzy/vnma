@@ -6,12 +6,12 @@
   <a href="https://pypi.org/project/vnma/"><img src="https://img.shields.io/pypi/v/vnma.svg?color=blue&logo=pypi&logoColor=white" alt="PyPI version"></a>
   <a href="https://pypi.org/project/vnma/"><img src="https://img.shields.io/pypi/pyversions/vnma.svg?logo=python&logoColor=white" alt="Python Versions"></a>
   <a href="https://github.com/GrandKenzy/vnma/actions/workflows/tests.yml"><img src="https://github.com/GrandKenzy/vnma/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause--Clear-orange.svg" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Custom-orange.svg" alt="License"></a>
 </p>
 
 # VNMA (Vendor Manager)
 
-> **Status:** Beta (v0.3.3)  
+> **Status:** Production (v1.1.0)
 > **Platform Support:** CPython 3.11, 3.12, 3.13, 3.14 (Tested on Windows and Linux)
 
 `vnma` is a dependency and vendoring manager for Python projects. It installs and manages dependencies inside a local project directory (`vendor/` or `vendor_vnma/`) instead of creating full Python virtual environments (`venv`).
@@ -91,7 +91,8 @@ vnma install requests
 vnma install colorama==0.4.6
 
 # Multiple packages:
-vnma install flask pytest
+vnma install flask
+vnma install pytest
 ```
 
 #### From a local directory:
@@ -269,7 +270,12 @@ entry_points = { my-tool = "my_library.cli:main" }
 | `vnma prune` | Remove unused packages that are no longer referenced in `vnma.toml`. |
 | `vnma uninstall [pkg]` | Remove a package or clean `vendor/` (preserves `vnma.toml` by default). |
 | `vnma sync-ide` | Reapply VS Code and PyCharm configuration files. |
-| `vnma clean` | Safely remove vendor folders and lockfiles. |
+| `vnma generate` | Generate a project or package TOML template. |
+| `vnma insert-import [target]` | Add the VNMA bootstrap import to a Python entry point. |
+| `vnma exec <binary>` | Execute a CLI installed in the vendor binary directory. |
+| `vnma check` | Check the vendor Python runtime compatibility. |
+| `vnma tools <name>` | Run `bigfiles`, `cacheclean`, or `search`. |
+| `vnma --verbose` / `vnma --quiet` | Control progress and diagnostic output. |
 
 ---
 
